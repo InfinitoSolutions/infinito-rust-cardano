@@ -1,5 +1,7 @@
 #ifndef CARDANO_RUST_H
 # define CARDANO_RUST_H
+#include <stdbool.h>
+
 /* Basic Types */
 
 typedef int cardano_result;
@@ -27,11 +29,23 @@ typedef struct cardano_account cardano_account;
 
 cardano_wallet *cardano_wallet_new(const uint8_t * const entropy_ptr, unsigned long entropy_size,
                                    const char * const password_ptr, unsigned long password_size);
+
+cardano_wallet *cardano_wallet_new_from_mnemonics(const char *mnemonics);
+
 void cardano_wallet_delete(cardano_wallet *);
 
 cardano_account *cardano_account_create(cardano_wallet *wallet, const char *alias, unsigned int index);
 void cardano_account_delete(cardano_account *account);
 
 unsigned long cardano_account_generate_addresses(cardano_account *account, int internal, unsigned int from_index, unsigned long num_indices, char *addresses_ptr[]);
+
+
+/***********/
+/* C Bidding  */
+/***********/
+
+bool init_wallet(const char* mnemonics);
+
+char* new_address(const char* alias);
 
 #endif
