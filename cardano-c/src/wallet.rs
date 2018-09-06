@@ -51,6 +51,29 @@ fn cardano_wallet_new( entropy_ptr: *const u8 /* expecting entropy ptr ... */
     Box::into_raw(wallet_box)
 }
 
+// Create a HD BIP44 compliant Wallet from the given mnemonics
+///
+/// use the function `cardano_wallet_delete` to free all the memory associated to the returned
+/// object. This function may fail if:
+///
+/// - panic: if there is no more memory to allocate the object to return
+/// - panic or return 0 (nullptr or NULL) if the given seed_ptr is of invalid length
+///
+#[no_mangle]
+pub extern "C"
+fn cardano_wallet_new_from_mnemonics( mnemonics    : *mut c_char
+                     ) -> WalletPtr
+{
+    let mnemonics = unsafe { ffi::CStr::from_ptr(mnemonics) };
+    let mnemonics_str = mnemonics.to_str().unwrap();
+
+    let mnemonics = MnemonicString::new(&ENGLISH, mnemonics_str.to_string()).unwrap();
+    let wallet = bip44::Wallet::from_bip39_mnemonics(&mnemonics, b"password", Default::default());
+
+    let wallet_box = Box::new(wallet);
+    Box::into_raw(wallet_box)
+}
+
 /// take ownership of the given pointer and free the associated data
 ///
 /// The data must be a valid Wallet created by `cardano_wallet_new`.
