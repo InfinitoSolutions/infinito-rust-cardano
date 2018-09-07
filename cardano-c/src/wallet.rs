@@ -8,6 +8,11 @@ use cardano::util;
 use std::os::raw::{c_char};
 use std::{ffi, slice, ptr};
 
+use cardano::wallet::bip44::{AddrType};
+use cardano::bip::bip39::{MnemonicString, dictionary::ENGLISH};
+use cardano::address::ExtendedAddr;
+use cardano::util::base58;
+
 /* ******************************************************************************* *
  *                                  Wallet object                                  *
  * ******************************************************************************* */
