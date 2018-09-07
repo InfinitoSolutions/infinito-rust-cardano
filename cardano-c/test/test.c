@@ -36,7 +36,7 @@ int main(int argc, char* argv[]) {
 
 	if (wallet_test()) exit(35);
 
-	const char* mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon yes";
+	const char* mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 	static const char* alias = "address one";
 	init_wallet(mnemonics);
 	char *address;
