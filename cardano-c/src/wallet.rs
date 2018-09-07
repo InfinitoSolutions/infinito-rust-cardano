@@ -4,6 +4,7 @@ use cardano::hdwallet;
 use cardano::bip;
 use cardano::address;
 use cardano::util;
+use cardano::bip::bip39::{dictionary, Mnemonics};
 
 use std::os::raw::{c_char};
 use std::{ffi, slice, ptr};
@@ -138,4 +139,42 @@ fn cardano_account_generate_addresses( account_ptr:  AccountPtr
                 ptr::write(addresses_ptr.wrapping_offset(idx as isize), c_address.into_raw())
             };
         }).count()
+}
+
+
+#[no_mangle]
+pub extern "C"
+fn cardano_wallet_create_address( mnemonics: *const c_char) -> *mut c_char
+{
+    let c_str = unsafe { ffi::CStr::from_ptr(mnemonics) };
+    let mnemonics: &str = c_str.to_str().unwrap();
+    let mnemonics = match Mnemonics::from_string(&dictionary::ENGLISH, mnemonics) {
+        Err(_) => return ptr::null_mut(),
+        Ok(e) => e,
+    };
+
+    let entropy = match bip::bip39::Entropy::from_mnemonics(&mnemonics) {
+        Err(_) => return ptr::null_mut(),
+        Ok(e) => e,
+    };
+
+    let password: [u8; 1] = [0];
+    let mut wallet = bip44::Wallet::from_entropy(&entropy, &password, hdwallet::DerivationScheme::V2);
+
+    let account = wallet.create_account("Test Wallet" as &str, 0);
+    let account = Box::new(account.public());
+    let addr_type = bip44::AddrType::External;
+    let from_index = 0;
+    let num_indices = 1;
+    let mut c_address = "".to_owned();
+    let _create_address = account.address_generator(addr_type, from_index)
+        .expect("we expect the derivation to happen successfully")
+        .take(num_indices)
+        .enumerate()
+        .map(|(_idx, xpub)| {
+            let address = address::ExtendedAddr::new_simple(*xpub.unwrap());
+            let address = format!("{}", util::base58::encode(&address.to_bytes()));
+            c_address = format!("{}",address); 
+        }).count();
+    ffi::CString::new(c_address).unwrap().into_raw()
 }

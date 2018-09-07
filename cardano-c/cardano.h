@@ -33,5 +33,6 @@ cardano_account *cardano_account_create(cardano_wallet *wallet, const char *alia
 void cardano_account_delete(cardano_account *account);
 
 unsigned long cardano_account_generate_addresses(cardano_account *account, int internal, unsigned int from_index, unsigned long num_indices, char *addresses_ptr[]);
+const char *  cardano_wallet_create_address(const char * entropy_ptr);
 
 #endif
