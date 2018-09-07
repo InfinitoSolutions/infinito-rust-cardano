@@ -1,4 +1,4 @@
-use cardano::wallet::scheme::{Wallet};
+use cardano::wallet::scheme::{Wallet, Account};
 use cardano::wallet::bip44;
 use cardano::hdwallet;
 use cardano::bip;
@@ -12,7 +12,12 @@ use cardano::wallet::bip44::{AddrType};
 use cardano::bip::bip39::{MnemonicString, dictionary::ENGLISH};
 use cardano::address::ExtendedAddr;
 use cardano::util::base58;
+use cardano::util::hex;
 
+use cardano::{config::ProtocolMagic, fee, txutils, tx, coin};
+
+const HOST: &'static str = "172.104.88.233:8100";
+const PROTOCOL_MAGIC : u32 = 764824073;
 /* ******************************************************************************* *
  *                                  Wallet object                                  *
  * ******************************************************************************* */
@@ -166,4 +171,56 @@ fn cardano_account_generate_addresses( account_ptr:  AccountPtr
                 ptr::write(addresses_ptr.wrapping_offset(idx as isize), c_address.into_raw())
             };
         }).count()
+}
+
+
+/// create a new account, the account is given an alias and an index,
+/// the index is the derivation index, we do not check if there is already
+/// an account with this given index. The alias here is only an handy tool
+/// to retrieve a created account from a wallet.
+///
+/// The returned object is not owned by any smart pointer or garbage collector.
+/// To avoid memory leak, use `cardano_account_delete`
+///
+#[no_mangle]
+pub extern "C"
+fn cardano_new_transaction( wallet_ptr: WalletPtr
+                            , account_ptr:  AccountPtr
+                         )
+{
+    let wallet = unsafe { wallet_ptr.as_mut() }.expect("Not a NULL PTR");
+    let account = unsafe { account_ptr.as_mut() }
+        .expect("Not a NULL PTR");
+
+    // 2. create a valid transaction
+    let account_number = 0;
+    let input_index = 0;
+    let input_addr = account.generate_addresses(
+        [(bip44::AddrType::External, input_index)].iter()).pop().unwrap();
+    let output_addr = account.generate_addresses(
+        [(bip44::AddrType::External, input_index + 1)].iter()).pop().unwrap();
+    let change_addr = account.generate_addresses(
+        [(bip44::AddrType::Internal, input_index + 2)].iter()).pop().unwrap();
+
+    let txin = tx::TxIn::new(tx::TxId::from_slice(&hex::decode("4acd64fbf0950312ac8e75d09bb01a3c7f15c8714643b28c9c3a75b781949fee").unwrap()).unwrap(), 0);
+    let addressing = bip44::Addressing::new(account_number, bip44::AddrType::External, input_index).unwrap();
+    let txout = tx::TxOut::new(input_addr.clone(), coin::Coin::new(600_000).unwrap());
+    let inputs = vec![txutils::Input::new(txin, txout, addressing)];
+
+    let outputs = vec![tx::TxOut::new(output_addr.clone(), coin::Coin::new(400_000).unwrap())];
+
+    let (txaux, fee) = wallet.new_transaction(
+        ProtocolMagic::new(PROTOCOL_MAGIC),
+        fee::SelectionPolicy::default(),
+        inputs.iter(),
+        outputs,
+        &txutils::OutputPolicy::One(change_addr.clone())).unwrap();
+
+    println!("############## transaction prepared");
+    println!("  txaux {}", txaux);
+    println!("  tx id {}", txaux.tx.id());
+    println!("  from address {}", base58::encode(&input_addr.to_bytes()));
+    println!("  to address {}", base58::encode(&output_addr.to_bytes()));
+    println!("  change to address {}", base58::encode(&change_addr.to_bytes()));
+    println!("  fee: {:?}", fee);
 }

@@ -1,5 +1,5 @@
 extern crate cardano;
-
+extern crate protocol;
 pub mod address;
 pub mod wallet;
 pub mod bip39;

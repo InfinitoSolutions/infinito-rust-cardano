@@ -8,3 +8,5 @@ crate-type = ["staticlib" ]
 
 [dependencies]
 cardano = { path = "../cardano" }
+protocol = { path = "../protocol" }
+rand = "*"

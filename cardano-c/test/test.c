@@ -23,6 +23,8 @@ int wallet_test(void) {
 
 	printf("address is valid: %s\n", cardano_address_is_valid(address) ? "NO" : "YES");
 
+	cardano_new_transaction(wallet, account);
+
 	cardano_account_delete(account);
 
 	cardano_wallet_delete(wallet);

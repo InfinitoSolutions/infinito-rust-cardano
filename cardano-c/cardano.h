@@ -32,6 +32,8 @@ cardano_wallet *cardano_wallet_new(const uint8_t * const entropy_ptr, unsigned l
 
 cardano_wallet *cardano_wallet_new_from_mnemonics(const char *mnemonics);
 
+void cardano_new_transaction(cardano_wallet *wallet, cardano_account *account);
+
 void cardano_wallet_delete(cardano_wallet *);
 
 cardano_account *cardano_account_create(cardano_wallet *wallet, const char *alias, unsigned int index);
