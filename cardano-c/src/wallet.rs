@@ -3,7 +3,9 @@ use cardano::wallet::bip44;
 use cardano::hdwallet;
 use cardano::bip;
 use cardano::address;
-use cardano::util;
+use cardano::{util::{hex}, tx, fee, coin, hash::{HASH_SIZE}, txutils};
+use cardano::bip::bip39::{Mnemonics, MnemonicString, dictionary};
+use cardano::config::{Config};
 
 use std::os::raw::{c_char};
 use std::{ffi, slice, ptr};
@@ -46,6 +48,114 @@ fn cardano_wallet_new( entropy_ptr: *const u8 /* expecting entropy ptr ... */
     };
 
     let wallet = bip44::Wallet::from_entropy(&entropy, &password, hdwallet::DerivationScheme::V2);
+
+    let wallet_box = Box::new(wallet);
+    Box::into_raw(wallet_box)
+}
+
+#[no_mangle]
+pub extern "C"
+fn cardano_wallet_new_mnemonics( password_ptr: *const u8 /* password ptr */
+                     , password_size: usize    /* password size */
+                     ) -> WalletPtr
+{
+    let password = unsafe { slice::from_raw_parts(password_ptr, password_size) };
+    const MNEMONICS : &'static str = "claw quit lamp captain deny sea crunch weekend tornado sugar coin movie leaf arrive vanish";
+    
+    let mnemonics = match Mnemonics::from_string(&dictionary::ENGLISH, MNEMONICS) {
+        Err(_) => return ptr::null_mut(),
+        Ok(e) => e,
+    };
+
+    let entropy = match bip::bip39::Entropy::from_mnemonics(&mnemonics) {
+        Err(_) => return ptr::null_mut(),
+        Ok(e) => e,
+    };
+
+    let wallet = bip44::Wallet::from_entropy(&entropy, &password, hdwallet::DerivationScheme::V2);
+
+    let wallet_box = Box::new(wallet);
+    Box::into_raw(wallet_box)
+}
+
+#[no_mangle]
+pub extern "C"
+fn cardano_wallet_new_mnemonics_2( password_ptr: *const u8 /* password ptr */
+                     , password_size: usize    /* password size */
+                     ) -> WalletPtr
+{
+    let password = unsafe { slice::from_raw_parts(password_ptr, password_size) };
+    const MNEMONICS : &'static str = "claw quit lamp captain deny sea crunch weekend tornado sugar coin movie leaf arrive vanish";
+    
+    let mnemonics_str = match MnemonicString::new(&dictionary::ENGLISH, MNEMONICS.to_owned()) {
+        Err(_) => return ptr::null_mut(),
+        Ok(e) => e,
+    };
+
+    let wallet = bip44::Wallet::from_bip39_mnemonics(&mnemonics_str, &password, hdwallet::DerivationScheme::V2);
+
+    let wallet_box = Box::new(wallet);
+    Box::into_raw(wallet_box)
+}
+
+#[no_mangle]
+pub extern "C"
+fn cardano_wallet_new_mnemonics_3( mnemonics_inp: *const c_char
+                     , password_ptr: *const u8 /* password ptr */
+                     , password_size: usize    /* password size */
+                     ) -> WalletPtr
+{
+    let password = unsafe { slice::from_raw_parts(password_ptr, password_size) };
+    let cstr = unsafe { ffi::CStr::from_ptr(mnemonics_inp) };
+    let mnemonics_str = match cstr.to_str() {
+        Err(_) => return ptr::null_mut(),
+        Ok(e) => e,
+    };
+    
+    let mnemonics = match Mnemonics::from_string(&dictionary::ENGLISH, &mnemonics_str) {
+        Err(_) => return ptr::null_mut(),
+        Ok(e) => e,
+    };
+
+    let entropy = match bip::bip39::Entropy::from_mnemonics(&mnemonics) {
+        Err(_) => return ptr::null_mut(),
+        Ok(e) => e,
+    };
+
+    let wallet = bip44::Wallet::from_entropy(&entropy, &password, hdwallet::DerivationScheme::V2);
+
+    let wallet_box = Box::new(wallet);
+    Box::into_raw(wallet_box)
+}
+
+#[no_mangle]
+pub extern "C"
+fn wallet_spend(password_ptr: *const u8 /* password ptr */
+                     , password_size: usize ) -> WalletPtr
+{
+    let password = unsafe { slice::from_raw_parts(password_ptr, password_size) };
+    const MNEMONICS : &'static str = "claw quit lamp captain deny sea crunch weekend tornado sugar coin movie leaf arrive vanish";
+    
+    let mnemonics_str = match MnemonicString::new(&dictionary::ENGLISH, MNEMONICS.to_owned()) {
+        Err(_) => return ptr::null_mut(),
+        Ok(e) => e,
+    };
+
+    let wallet = bip44::Wallet::from_bip39_mnemonics(&mnemonics_str, &password, hdwallet::DerivationScheme::V2);
+
+    let config = Config::default();
+    let selection_policy = fee::SelectionPolicy::FirstMatchFirst;
+    let ea = address::ExtendedAddr::from_bytes(&out).unwrap();
+
+    let result = match wallet.new_transaction(
+        config.protocol_magic, 
+        selection_policy, 
+        inputs, 
+        outputs, 
+        &txutils::OutputPolicy::One(ea)) {
+        Err(_) => return ptr::null_mut(),
+        Ok(e) => e,
+    };
 
     let wallet_box = Box::new(wallet);
     Box::into_raw(wallet_box)
