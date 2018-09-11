@@ -20,4 +20,7 @@ cardano_wallet *generate_address(const char *key, unsigned int index, int intern
 
 int cardano_address_is_valid(const char *address);
 
+bool new_transaction( const char *root_key, const char *utxos, const char *from_addr, const char *to_addrs, char *signed_trx[] );
+int transaction_fee( const char *root_key, const char *utxos, const char *from_addr, const char *to_addrs);
+
 #endif

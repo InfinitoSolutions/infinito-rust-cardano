@@ -1,15 +1,28 @@
+extern crate cbor_event;
+extern crate rustc_serialize;
+extern crate serde_json;
+
 use cardano::address;
 use cardano::wallet::{bip44, keygen};
 use cardano::util::{self, hex};
 use cardano::hdwallet::{self, XPrv, XPRV_SIZE};
 use cardano::wallet::scheme::{Wallet};
 use cardano::bip::bip39::{self, Mnemonics, MnemonicString, dictionary};
+use cardano::{config::ProtocolMagic, fee, txutils, tx, coin};
+use cardano::util::base58;
+use cardano::address::ExtendedAddr;
+use cardano::tx::{txaux_serialize};
 
 use cardano::bip;
 
 use std::{ffi, slice, ptr};
 use std::os::raw::{c_char};
 
+use rustc_serialize::base64::{self, ToBase64};
+use serde_json::{Value, Error, error::ErrorCode};
+
+const PROTOCOL_MAGIC : u32 = 764824073;
+const DEBUG: bool = true;
 type WalletPtr  = *mut bip44::Wallet;
 type AccountPtr = *mut bip44::Account<hdwallet::XPub>;
 
@@ -147,3 +160,137 @@ fn generate_address( root_key: *mut c_char
     delete_account(account_ptr);
     wallet_ptr
 }
+
+fn cardano_new_transaction  ( root_key  : *mut c_char
+                            , utxos     : *mut c_char
+                            , from_addr : *mut c_char
+                            , to_addrs  : *mut c_char
+                            , fee_only  : bool
+                            , signed_trx: *mut *mut c_char )
+-> Result<fee::Fee, Error> 
+{
+    // parse input c_char to string
+    let utxos = unsafe { ffi::CStr::from_ptr(utxos) };
+    let addrs = unsafe { ffi::CStr::from_ptr(to_addrs) };
+
+    let utxos_str = utxos.to_str().unwrap();
+    let addrs_str = addrs.to_str().unwrap();
+
+    // Parse the string of data into json
+    let utxos_json: Value = serde_json::from_str(&utxos_str.to_string())?;
+    let addrs_json: Value = serde_json::from_str(&addrs_str.to_string())?;
+
+    if !utxos_json.is_array() || !addrs_json.is_array() {
+        return Err(Error::syntax(ErrorCode::ExpectedObjectOrArray, 1, 1));
+    }
+
+    // get input array length
+    let utxos_arr_len = utxos_json.as_array().unwrap().len();
+    let addrs_arr_len = addrs_json.as_array().unwrap().len();
+
+    if utxos_arr_len <= 0 || addrs_arr_len <= 0 {
+        return Err(Error::syntax(ErrorCode::ExpectedObjectOrArray, 1, 1));
+    }
+
+    // init wallet from root key
+    let mut addr_pointer: *mut c_char = 0 as *mut c_char;
+    let address_ptr: *mut *mut i8 = &mut addr_pointer;
+
+    let wallet_ptr = generate_address(root_key, 0, false, 0, 1, address_ptr);
+    let wallet     = unsafe {wallet_ptr.as_mut()}.expect("Not a NULL PTR");
+
+    // init input & output of transaction
+    let mut inputs = vec![];
+    let mut outputs = vec![];
+
+    // convert from_addr from string to ExtendedAddr 
+    let from_addr = unsafe {
+        ffi::CStr::from_ptr(from_addr).to_string_lossy()
+    };
+
+    let from_addr_bytes = base58::decode_bytes(from_addr.as_bytes()).unwrap();
+    let from = ExtendedAddr::from_bytes(&from_addr_bytes[..]).unwrap();
+
+    // init transaction input from utxos
+    for x in 0..utxos_arr_len {
+        let trx_id = &utxos_json[x]["id"].as_str().unwrap();        
+        let txin = tx::TxIn::new(tx::TxId::from_slice(&hex::decode(trx_id).unwrap()).unwrap(), utxos_json[x]["index"].to_string().parse::<u32>().unwrap());
+        
+        let addressing = bip44::Addressing::new(0, bip44::AddrType::External, 0).unwrap();
+        let txout = tx::TxOut::new(from.clone(), coin::Coin::new(utxos_json[x]["value"].to_string().parse::<u64>().unwrap()).unwrap());
+
+        inputs.push(txutils::Input::new(txin, txout, addressing));
+    }
+
+    // init transaction output from to_address
+    for x in 0..addrs_arr_len {
+        let to_raw = base58::decode_bytes(addrs_json[x]["addr"].as_str().unwrap().as_bytes()).unwrap();
+        let to = ExtendedAddr::from_bytes(&to_raw[..]).unwrap();
+
+        outputs.push(tx::TxOut::new(to.clone(), coin::Coin::new(addrs_json[x]["value"].to_string().parse::<u64>().unwrap()).unwrap()))
+    }
+
+    let (txaux, fee) = wallet.new_transaction(
+        ProtocolMagic::new(PROTOCOL_MAGIC),
+        fee::SelectionPolicy::default(),
+        inputs.iter(),
+        outputs,
+        &txutils::OutputPolicy::One(from.clone())).unwrap();
+
+    if DEBUG {
+        println!("############## Transaction prepared #############");
+        println!("  txaux {}", txaux);
+        println!("  tx id {}", txaux.tx.id());
+        println!("  from address {}", from);
+        println!("  fee: {:?}", fee);
+        println!("###################### End ######################");
+    }
+
+    delete_wallet(wallet_ptr);
+
+    if fee_only {
+        return Ok(fee);
+    }
+
+    // convert raw transaction to string, base64
+    let ser = cbor_event::se::Serializer::new_vec();
+    let txbytes = txaux_serialize(&txaux.tx, &txaux.witness, ser).unwrap().finalize();
+    
+    let result = txbytes.to_base64(base64::STANDARD);
+    let c_signed_trx = ffi::CString::new(result)
+        .expect("Strings only contains ASCII chars");
+    // make sure the ptr is stored at the right place with alignments and all
+    unsafe {
+        ptr::write(signed_trx.wrapping_offset(0 as isize), c_signed_trx.into_raw())
+    };
+
+    Ok(fee)
+}
+
+#[no_mangle]
+pub extern "C"
+fn new_transaction( root_key : *mut c_char, utxos : *mut c_char, from_addr : *mut c_char, to_addrs: *mut c_char, signed_trx: *mut *mut c_char )
+-> bool
+{
+    let result = cardano_new_transaction(root_key, utxos, from_addr, to_addrs, false, signed_trx);
+    match result {
+        Ok(_v) => true,
+        Err(_e) => false,
+    }
+}
+
+#[no_mangle]
+pub extern "C"
+fn transaction_fee( root_key : *mut c_char, utxos : *mut c_char, from_addr : *mut c_char, to_addrs: *mut c_char ) -> u64
+{
+    // unusage pointer
+    let mut signed_trx_pointer: *mut c_char = 0 as *mut c_char;
+    let signed_trx_ptr: *mut *mut i8 = &mut signed_trx_pointer;
+
+    let result = cardano_new_transaction(root_key, utxos, from_addr, to_addrs, true, signed_trx_ptr);
+    match result {
+        Ok(v) => v.to_coin().to_integral(),
+        Err(_e) => 0,
+    }
+}
+

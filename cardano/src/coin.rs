@@ -78,6 +78,10 @@ impl Coin {
     pub fn new(v: u64) -> Result<Self> {
         if v <= MAX_COIN { Ok(Coin(v)) } else { Err(Error::OutOfBound(v)) }
     }
+
+    pub fn to_integral(self) -> u64 {
+        return self.0
+    }
 }
 impl ::std::ops::Deref for Coin {
     type Target = u64;
