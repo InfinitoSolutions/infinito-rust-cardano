@@ -19,7 +19,7 @@ int wallet_test_ibl(void) {
 
     printf("rootkey: %s\n", rootkey);
 
-    generate_address(rootkey, alias, 0, 0, 0, 1, &address);
+    cardano_wallet *wallet = generate_address(rootkey, alias, 0, 0, 0, 1, &address);
 
     printf("address generated: %s\n", address);
 

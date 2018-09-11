@@ -34,6 +34,36 @@ fn create_rootkey( mnemonics: *mut c_char
     };
 }
 
+// fn create_rootkey2( mnemonics: *mut c_char
+//                  , password:  *mut c_char
+//                  , root_key:  *mut *mut c_char)
+// {
+//     let mnemonics     = unsafe {ffi::CStr::from_ptr(mnemonics)};
+//     let mnemonics_str = mnemonics.to_str().unwrap();
+//     let mnemonics     = MnemonicString::new(&ENGLISH, mnemonics_str.to_string()).unwrap();
+
+//     let password      = unsafe {ffi::CStr::from_ptr(password)};
+//     let password_str  = password.to_str().unwrap();
+//     let password      = password_str.as_bytes();
+
+//     let entropy = match Entropy::from_mnemonics(&mnemonics) { 
+//         Err(_) => return ptr::null_mut(), 
+//         Ok(e) => e, 
+//     };
+//     let mut seed = [0u8; XPRV_SIZE];
+//     keygen::generate_seed(&entropy, &password, &mut seed);
+//     let xprv = XPrv::normalize_bytes(seed);
+
+
+//     // let seed = bip39::Seed::from_mnemonic_string(&mnemonics, &password);
+//     // let xprv = XPrv::generate_from_bip39(&seed);
+
+//     let xprv_ptr = ffi::CString::new(xprv.to_string()).expect("base58 strings only contains ASCII chars");
+//     unsafe {
+//         ptr::write(root_key, xprv_ptr.into_raw())
+//     };
+// }
+
 #[no_mangle]
 pub extern "C"
 fn create_wallet(root_key: *mut c_char)
@@ -63,27 +93,27 @@ fn delete_wallet(wallet_ptr: WalletPtr)
     };
 }
 
-#[no_mangle]
-pub extern "C"
-fn create_account( root_key: *mut c_char
-                 , account_alias: *mut c_char
-                 , account_index: u32)
-    -> AccountPtr
-{
-    let wallet_ptr = create_wallet(root_key);
-    let wallet     = unsafe {wallet_ptr.as_mut()}.expect("Not a NULL PTR");
+// #[no_mangle]
+// pub extern "C"
+// fn create_account( root_key: *mut c_char
+//                  , account_alias: *mut c_char
+//                  , account_index: u32)
+//     -> AccountPtr
+// {
+//     let wallet_ptr = create_wallet(root_key);
+//     let wallet     = unsafe {wallet_ptr.as_mut()}.expect("Not a NULL PTR");
 
-    let account_alias = unsafe {
-        ffi::CStr::from_ptr(account_alias).to_string_lossy()
-    };
+//     let account_alias = unsafe {
+//         ffi::CStr::from_ptr(account_alias).to_string_lossy()
+//     };
 
-    let account     = wallet.create_account(&account_alias, account_index);
-    let account_box = Box::new(account.public()); 
+//     let account     = wallet.create_account(&account_alias, account_index);
+//     let account_box = Box::new(account.public()); 
 
-    delete_wallet(wallet_ptr);
+//     delete_wallet(wallet_ptr);
 
-    Box::into_raw(account_box)
-}
+//     Box::into_raw(account_box)
+// }
 
 #[no_mangle]
 pub extern "C"
@@ -103,8 +133,21 @@ fn generate_address( root_key: *mut c_char
                    , from_index: u32
                    , num_indices: usize
                    , address_ptr: *mut *mut c_char)
+    -> WalletPtr
 {
-    let account_ptr = create_account(root_key, account_alias, account_index);
+    let wallet_ptr = create_wallet(root_key);
+    let wallet     = unsafe {wallet_ptr.as_mut()}.expect("Not a NULL PTR");
+    // let account_ptr = create_account(root_key, account_alias, account_index);
+    // let account     = unsafe {account_ptr.as_mut()}.expect("Not a NULL PTR");
+
+    let account_alias = unsafe {
+        ffi::CStr::from_ptr(account_alias).to_string_lossy()
+    };
+
+
+    let account     = wallet.create_account(&account_alias, account_index);
+    let account_box = Box::new(account.public()); 
+    let account_ptr = Box::into_raw(account_box);
     let account     = unsafe {account_ptr.as_mut()}.expect("Not a NULL PTR");
 
     let addr_type = if internal {
@@ -128,5 +171,6 @@ fn generate_address( root_key: *mut c_char
             };
         }).count();
 
-    delete_account(account_ptr);
+    // delete_account(account_ptr);
+    wallet_ptr
 }
