@@ -171,6 +171,6 @@ fn generate_address( root_key: *mut c_char
             };
         }).count();
 
-    // delete_account(account_ptr);
+    delete_account(account_ptr);
     wallet_ptr
 }
