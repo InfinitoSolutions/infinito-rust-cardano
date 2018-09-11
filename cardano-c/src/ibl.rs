@@ -188,12 +188,12 @@ fn generate_address( root_key: *mut c_char
     wallet_ptr
 }
 
-fn cardano_new_transaction  ( root_key  : *mut c_char,
-                                utxos     : *mut c_char,
-                                from_addr : *mut c_char,
-                                to_addrs  : *mut c_char,
-                                fee_only  : bool,
-                                signed_trx: *mut *mut c_char )
+fn cardano_new_transaction  ( root_key  : *mut c_char
+                            , utxos     : *mut c_char
+                            , from_addr : *mut c_char
+                            , to_addrs  : *mut c_char
+                            , fee_only  : bool
+                            , signed_trx: *mut *mut c_char )
 -> Result<fee::Fee, Error> 
 {
     // init wallet from root key
@@ -307,9 +307,11 @@ fn new_transaction( root_key : *mut c_char, utxos : *mut c_char, from_addr : *mu
 pub extern "C"
 fn transaction_fee( root_key : *mut c_char, utxos : *mut c_char, from_addr : *mut c_char, to_addrs: *mut c_char ) -> u64
 {
+    // unusage pointer
     let mut signed_trx: i8 = 0;
     let mut signed_trx_ptr: *mut i8 = &mut signed_trx;
     let signed_trx_ptr: *mut *mut i8 = &mut signed_trx_ptr;
+
     let result = cardano_new_transaction(root_key, utxos, from_addr, to_addrs, true, signed_trx_ptr);
     match result {
         Ok(v) => v.to_coin().to_integral(),

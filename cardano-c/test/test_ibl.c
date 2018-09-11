@@ -27,7 +27,7 @@ int wallet_test_ibl(void) {
     printf("address is valid: %s\n", cardano_address_is_valid(address) ? "NO" : "YES");
 
     const char *utxos = "[{\"id\": \"e28c7bf914c855a9ceaf1741a251ab3cc001bd6ccac874b02bacf2f3a40e13c4\", \"index\": 0, \"value\": 9000000}]";
-    const char *to_addrs = "[{\"addr\": \"Ae2tdPwUPEZ3to1tD3ovyREAN5AajAPWuehHRSd5kNkTqgv2zkk4W4v14cS\",\"value\": 100000}]";
+    const char *to_addrs = "[{\"addr\": \"Ae2tdPwUPEZ3to1tD3ovyREAN5AajAPWuehHRSd5kNkTqgv2zkk4W4v14cS\",\"value\": 100000}, {\"addr\": \"Ae2tdPwUPEZ9hcJjj8T6iAoLF6RgaCYJ5TRRokxZWxGYNGoTuqcAAY2xGHj\",\"value\": 200000}]";
     static char *signed_trx;
     bool result = new_transaction(rootkey, utxos, address, to_addrs, &signed_trx);
     printf("Signed trx: %s\n", signed_trx);
