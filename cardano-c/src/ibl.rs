@@ -196,10 +196,6 @@ fn cardano_new_transaction  ( root_key  : *mut c_char
                             , signed_trx: *mut *mut c_char )
 -> Result<fee::Fee, Error> 
 {
-    // init wallet from root key
-    let wallet_ptr = create_wallet(root_key);
-    let wallet     = unsafe {wallet_ptr.as_mut()}.expect("Not a NULL PTR");
-
     // parse input c_char to string
     let utxos = unsafe { ffi::CStr::from_ptr(utxos) };
     let addrs = unsafe { ffi::CStr::from_ptr(to_addrs) };
@@ -222,6 +218,13 @@ fn cardano_new_transaction  ( root_key  : *mut c_char
     if utxos_arr_len <= 0 || addrs_arr_len <= 0 {
         return Err(Error::syntax(ErrorCode::ExpectedObjectOrArray, 1, 1));
     }
+
+    // init wallet from root key
+    let mut addr_pointer: *mut c_char = 0 as *mut c_char;
+    let address_ptr: *mut *mut i8 = &mut addr_pointer;
+
+    let wallet_ptr = generate_address(root_key, 0, false, 0, 1, address_ptr);
+    let wallet     = unsafe {wallet_ptr.as_mut()}.expect("Not a NULL PTR");
 
     // init input & output of transaction
     let mut inputs = vec![];
@@ -308,9 +311,8 @@ pub extern "C"
 fn transaction_fee( root_key : *mut c_char, utxos : *mut c_char, from_addr : *mut c_char, to_addrs: *mut c_char ) -> u64
 {
     // unusage pointer
-    let mut signed_trx: i8 = 0;
-    let mut signed_trx_ptr: *mut i8 = &mut signed_trx;
-    let signed_trx_ptr: *mut *mut i8 = &mut signed_trx_ptr;
+    let mut signed_trx_pointer: *mut c_char = 0 as *mut c_char;
+    let signed_trx_ptr: *mut *mut i8 = &mut signed_trx_pointer;
 
     let result = cardano_new_transaction(root_key, utxos, from_addr, to_addrs, true, signed_trx_ptr);
     match result {
