@@ -21,4 +21,7 @@ unsigned long generate_address(const char *key, const char *alias, unsigned int 
 
 int cardano_address_is_valid(const char *address);
 
+bool new_transaction( const char *root_key, const char *utxos, const char *from_addr, const char *to_addrs, char *signed_trx[] );
+int transaction_fee( const char *root_key, const char *utxos, const char *from_addr, const char *to_addrs);
+
 #endif
