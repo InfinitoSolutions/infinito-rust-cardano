@@ -9,11 +9,11 @@ int wallet_test_ibl(void) {
     static char *address;
     static char *rootkey;
 
-    const char* mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    const char* mnemonics = "abandon abandon abandon abandon abandon address abandon abandon abandon abandon abandon address";
     const char* password  = "password";
 
-    rootkey = create_rootkey_from_entropy(mnemonics, password, strlen(password));
-    // rootkey = create_rootkey(mnemonics, password);
+    // rootkey = create_rootkey_from_entropy(mnemonics, password, strlen(password));
+    rootkey = create_rootkey(mnemonics, password);
     if (!rootkey) {
         return -1;
     }
