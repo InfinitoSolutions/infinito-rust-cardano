@@ -22,15 +22,15 @@ use rustc_serialize::base64::{self, ToBase64};
 use serde_json::{Value, Error, error::ErrorCode};
 
 const PROTOCOL_MAGIC : u32 = 764824073;
-const DEBUG: bool = true;
+const DEBUG: bool = false;
 type WalletPtr  = *mut bip44::Wallet;
 type AccountPtr = *mut bip44::Account<hdwallet::XPub>;
 
 #[no_mangle]
 pub extern "C"
-fn create_rootkey( mnemonics: *mut c_char
-                 , password:  *mut c_char
-                 , root_key:  *mut *mut c_char)
+fn create_rootkey( mnemonics: *const c_char
+                 , password:  *const c_char )
+-> *mut c_char
 {
     let mnemonics     = unsafe {ffi::CStr::from_ptr(mnemonics)};
     let mnemonics_str = mnemonics.to_str().unwrap();
@@ -43,30 +43,27 @@ fn create_rootkey( mnemonics: *mut c_char
     let seed = bip39::Seed::from_mnemonic_string(&mnemonics, &password);
     let xprv = XPrv::generate_from_bip39(&seed);
 
-    let xprv_ptr = ffi::CString::new(xprv.to_string()).expect("base58 strings only contains ASCII chars");
-    unsafe {
-        ptr::write(root_key, xprv_ptr.into_raw())
-    };
+    ffi::CString::new(xprv.to_string()).unwrap().into_raw()
 }
 
 #[no_mangle]
 pub extern "C"
-fn create_rootkey_from_entropy( mnemonics: *mut c_char
-                              , password_ptr: *const u8
-                              , password_size: usize
-                              , root_key:  *mut *mut c_char)
+fn create_rootkey_from_entropy( mnemonics       : *const c_char
+                              , password_ptr    : *const u8
+                              , password_size   : usize )
+-> *mut c_char
 {
     let password = unsafe {slice::from_raw_parts(password_ptr, password_size)};
     
     let mnemonics = unsafe {ffi::CStr::from_ptr(mnemonics)};
     let mnemonics_str = mnemonics.to_str().unwrap();
     let mnemonics = match Mnemonics::from_string(&dictionary::ENGLISH, mnemonics_str) {
-        Err(_) => return,
+        Err(_) => return ptr::null_mut(),
         Ok(e) => e,
     };
 
     let entropy = match bip::bip39::Entropy::from_mnemonics(&mnemonics) {
-        Err(_) => return,
+        Err(_) => return ptr::null_mut(),
         Ok(e) => e,
     };
 
@@ -74,15 +71,12 @@ fn create_rootkey_from_entropy( mnemonics: *mut c_char
     keygen::generate_seed(&entropy, password, &mut seed);
     let xprv = XPrv::normalize_bytes(seed);
 
-    let xprv_ptr = ffi::CString::new(xprv.to_string()).expect("base58 strings only contains ASCII chars");
-    unsafe {
-        ptr::write(root_key, xprv_ptr.into_raw())
-    };
+    ffi::CString::new(xprv.to_string()).unwrap().into_raw()
 }
 
 #[no_mangle]
 pub extern "C"
-fn create_wallet(root_key: *mut c_char)
+fn create_wallet(root_key: *const c_char)
     -> WalletPtr
 {
     let root_key = unsafe {
@@ -118,15 +112,18 @@ fn delete_account(account_ptr: AccountPtr)
     };
 }
 
-#[no_mangle]
-pub extern "C"
-fn generate_address( root_key: *mut c_char
-                   , account_index: u32
-                   , internal: bool
-                   , from_index: u32
-                   , num_indices: usize
-                   , address_ptr: *mut *mut c_char)
-    -> WalletPtr
+#[derive(Debug)]
+struct Address {
+    wallet  : WalletPtr,
+    address : *mut c_char
+}
+
+fn cardano_generate_address ( root_key       : *const c_char
+                           , account_index  : u32
+                           , internal       : bool
+                           , from_index     : u32
+                           , num_indices    : usize)
+    -> Address
 {
     let wallet_ptr = create_wallet(root_key);
     let wallet     = unsafe {wallet_ptr.as_mut()}.expect("Not a NULL PTR");
@@ -142,32 +139,49 @@ fn generate_address( root_key: *mut c_char
         bip44::AddrType::External
     };
 
+    let mut c_address = "".to_owned();
     account.address_generator(addr_type, from_index)
         .expect("we expect the derivation to happen successfully")
         .take(num_indices)
         .enumerate()
-        .map(|(idx, xpub)| {
+        .map(|(_idx, xpub)| {
             let address = address::ExtendedAddr::new_simple(*xpub.unwrap());
             let address = format!("{}", util::base58::encode(&address.to_bytes()));
-
-            let c_address = ffi::CString::new(address).expect("base58 strings only contains ASCII chars");
-
-            unsafe {
-                ptr::write(address_ptr.wrapping_offset(idx as isize), c_address.into_raw())
-            };
+            c_address   = format!("{}",address);
         }).count();
 
     delete_account(account_ptr);
-    wallet_ptr
+
+    Address {
+        wallet  : wallet_ptr,
+        address : ffi::CString::new(c_address).unwrap().into_raw()
+    }
 }
 
-fn cardano_new_transaction  ( root_key  : *mut c_char
-                            , utxos     : *mut c_char
-                            , from_addr : *mut c_char
-                            , to_addrs  : *mut c_char
-                            , fee_only  : bool
-                            , signed_trx: *mut *mut c_char )
--> Result<fee::Fee, Error> 
+#[no_mangle]
+pub extern "C"
+fn generate_address ( root_key       : *const c_char
+                    , account_index  : u32
+                    , internal       : bool
+                    , from_index     : u32
+                    , num_indices    : usize)
+-> *mut c_char
+{
+    let address = cardano_generate_address(root_key, account_index, internal, from_index, num_indices).address;
+    address
+}
+
+#[derive(Debug)]
+struct Transaction {
+    txaux   : tx::TxAux,
+    fee     : fee::Fee
+}
+
+fn cardano_new_transaction  ( root_key  : *const c_char
+                            , utxos     : *const c_char
+                            , from_addr : *const c_char
+                            , to_addrs  : *const c_char )
+-> Result<Transaction, Error> 
 {
     // parse input c_char to string
     let utxos = unsafe { ffi::CStr::from_ptr(utxos) };
@@ -192,11 +206,7 @@ fn cardano_new_transaction  ( root_key  : *mut c_char
         return Err(Error::syntax(ErrorCode::ExpectedObjectOrArray, 1, 1));
     }
 
-    // init wallet from root key
-    let mut addr_pointer: *mut c_char = 0 as *mut c_char;
-    let address_ptr: *mut *mut i8 = &mut addr_pointer;
-
-    let wallet_ptr = generate_address(root_key, 0, false, 0, 1, address_ptr);
+    let wallet_ptr = cardano_generate_address(root_key, 0, false, 0, 1).wallet;
     let wallet     = unsafe {wallet_ptr.as_mut()}.expect("Not a NULL PTR");
 
     // init input & output of transaction
@@ -248,48 +258,38 @@ fn cardano_new_transaction  ( root_key  : *mut c_char
 
     delete_wallet(wallet_ptr);
 
-    if fee_only {
-        return Ok(fee);
-    }
-
-    // convert raw transaction to string, base64
-    let ser = cbor_event::se::Serializer::new_vec();
-    let txbytes = txaux_serialize(&txaux.tx, &txaux.witness, ser).unwrap().finalize();
-    
-    let result = txbytes.to_base64(base64::STANDARD);
-    let c_signed_trx = ffi::CString::new(result)
-        .expect("Strings only contains ASCII chars");
-    // make sure the ptr is stored at the right place with alignments and all
-    unsafe {
-        ptr::write(signed_trx.wrapping_offset(0 as isize), c_signed_trx.into_raw())
-    };
-
-    Ok(fee)
+    return Ok(Transaction {
+        txaux   : txaux,
+        fee     : fee
+    })
 }
 
 #[no_mangle]
 pub extern "C"
-fn new_transaction( root_key : *mut c_char, utxos : *mut c_char, from_addr : *mut c_char, to_addrs: *mut c_char, signed_trx: *mut *mut c_char )
--> bool
+fn new_transaction( root_key : *const c_char, utxos : *const c_char, from_addr : *const c_char, to_addrs: *const c_char )
+-> *mut c_char
 {
-    let result = cardano_new_transaction(root_key, utxos, from_addr, to_addrs, false, signed_trx);
+    let result = cardano_new_transaction(root_key, utxos, from_addr, to_addrs);
     match result {
-        Ok(_v) => true,
-        Err(_e) => false,
+        Ok(v) => {
+            // convert raw transaction to string, base64
+            let ser = cbor_event::se::Serializer::new_vec();
+            let txbytes = txaux_serialize(&v.txaux.tx, &v.txaux.witness, ser).unwrap().finalize();
+            
+            let result = txbytes.to_base64(base64::STANDARD);
+            ffi::CString::new(result).unwrap().into_raw()
+        },
+        Err(_e) => return ptr::null_mut(),
     }
 }
 
 #[no_mangle]
 pub extern "C"
-fn transaction_fee( root_key : *mut c_char, utxos : *mut c_char, from_addr : *mut c_char, to_addrs: *mut c_char ) -> u64
+fn transaction_fee( root_key : *const c_char, utxos : *const c_char, from_addr : *const c_char, to_addrs: *const c_char ) -> u64
 {
-    // unusage pointer
-    let mut signed_trx_pointer: *mut c_char = 0 as *mut c_char;
-    let signed_trx_ptr: *mut *mut i8 = &mut signed_trx_pointer;
-
-    let result = cardano_new_transaction(root_key, utxos, from_addr, to_addrs, true, signed_trx_ptr);
+    let result = cardano_new_transaction(root_key, utxos, from_addr, to_addrs);
     match result {
-        Ok(v) => v.to_coin().to_integral(),
+        Ok(v) => v.fee.to_coin().to_integral(),
         Err(_e) => 0,
     }
 }
