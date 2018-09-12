@@ -110,7 +110,7 @@ struct Address {
 
 fn cardano_generate_address ( root_key       : *const c_char
                            , account_index  : u32
-                           , internal       : bool
+                           , internal       : u32
                            , from_index     : u32
                            , num_indices    : usize)
     -> Address
@@ -120,7 +120,7 @@ fn cardano_generate_address ( root_key       : *const c_char
 
     let account     = wallet.create_account("", account_index).public();
 
-    let addr_type = if internal {
+    let addr_type = if internal == 1 {
         bip44::AddrType::Internal
     } else {
         bip44::AddrType::External
@@ -147,7 +147,7 @@ fn cardano_generate_address ( root_key       : *const c_char
 pub extern "C"
 fn generate_address ( root_key       : *const c_char
                     , account_index  : u32
-                    , internal       : bool
+                    , internal       : u32
                     , from_index     : u32
                     , num_indices    : usize)
 -> *mut c_char
@@ -192,7 +192,7 @@ fn cardano_new_transaction  ( root_key  : *const c_char
         return Err(Error::syntax(ErrorCode::ExpectedObjectOrArray, 1, 1));
     }
 
-    let wallet_ptr = cardano_generate_address(root_key, 0, false, 0, 1).wallet;
+    let wallet_ptr = cardano_generate_address(root_key, 0, 0, 0, 1).wallet;
     let wallet     = unsafe {wallet_ptr.as_mut()}.expect("Not a NULL PTR");
 
     // init input & output of transaction
@@ -270,12 +270,105 @@ fn new_transaction( root_key : *const c_char, utxos : *const c_char, from_addr :
 
 #[no_mangle]
 pub extern "C"
-fn transaction_fee( root_key : *const c_char, utxos : *const c_char, from_addr : *const c_char, to_addrs: *const c_char ) -> u64
+fn transaction_fee( root_key : *const c_char, utxos : *const c_char, from_addr : *const c_char, to_addrs: *const c_char ) -> *mut c_char
 {
     let result = cardano_new_transaction(root_key, utxos, from_addr, to_addrs);
     match result {
-        Ok(v) => v.fee.to_coin().to_integral(),
-        Err(_e) => 0,
+        Ok(v) => {
+            let fee = v.fee.to_coin().to_integral().to_string();
+            ffi::CString::new(fee).unwrap().into_raw()
+        },
+        Err(_e) => return ptr::null_mut(),
     }
 }
 
+#[no_mangle]
+pub extern fn validate_address(c_address: *const c_char) -> *mut c_char {
+    let address_base58 = unsafe { ffi::CStr::from_ptr(c_address).to_bytes() };
+    let recipient;
+    if let Ok(address_raw) = base58::decode_bytes(address_base58) {
+        if let Ok(_) = ExtendedAddr::from_bytes(&address_raw[..]) {
+            recipient = "0";
+        } else {
+            recipient = "2";
+        }
+    } else {
+        recipient = "1";
+    }
+        ffi::CString::new(recipient).unwrap().into_raw()
+}
+
+
+
+#[cfg(feature = "jni")]
+#[allow(non_snake_case)]
+pub mod android {
+  extern crate jni;
+  use super::*;
+  use self::jni::JNIEnv;
+  use self::jni::objects::{JClass, JString};
+  use self::jni::sys::{jint, jstring };
+#[no_mangle]
+    pub unsafe extern fn Java_packageName_className_createTransaction(
+    env: JNIEnv, _: JClass, root_key: JString, utxos: JString, from_addr: JString, to_addrs: JString
+  ) -> jstring {
+      let transaction = new_transaction(env.get_string(root_key).expect("invalid pattern string").as_ptr(),
+      env.get_string(utxos).expect("invalid pattern string").as_ptr(),
+      env.get_string(from_addr).expect("invalid pattern string").as_ptr(),
+      env.get_string(to_addrs).expect("invalid pattern string").as_ptr(),
+      );
+      let transaction_ptr = ffi::CString::from_raw(transaction);
+      let output = env.new_string(transaction_ptr.to_str().unwrap()).expect("Couldn't create java string!");
+      output.into_inner()
+  }
+
+  #[no_mangle]
+    pub unsafe extern fn Java_packageName_className_createAddressFromRootKey(
+    env: JNIEnv, _: JClass, rootkey: JString, account_index: jint, internal: jint, from_index: jint, num_indices: jint
+  ) -> jstring {
+      let address = generate_address(env.get_string(rootkey).expect("invalid pattern string").as_ptr(),
+      account_index as u32,
+      internal as u32,
+      from_index as u32,
+      num_indices as usize,
+      );
+      let address_ptr = ffi::CString::from_raw(address);
+      let output = env.new_string(address_ptr.to_str().unwrap()).expect("Couldn't create java string!");
+      output.into_inner()
+  }
+
+    #[no_mangle]
+    pub unsafe extern fn Java_packageName_className_createRootKey(
+    env: JNIEnv, _: JClass, mnemonics: JString, password: JString
+  ) -> jstring {
+      let rootkey = create_rootkey(env.get_string(mnemonics).expect("invalid pattern string").as_ptr(), env.get_string(password).expect("invalid pattern string").as_ptr());
+      let rootkey_ptr = ffi::CString::from_raw(rootkey);
+      let output = env.new_string(rootkey_ptr.to_str().unwrap()).expect("Couldn't create java string!");
+      output.into_inner()
+  }
+
+  #[no_mangle]
+    pub unsafe extern fn Java_packageName_className_validateAddress(
+    env: JNIEnv, _: JClass, address: JString
+  ) -> jstring {
+        let result = validate_address(env.get_string(address).expect("invalid pattern string").as_ptr());
+        let result_ptr = ffi::CString::from_raw(result);
+        let output = env.new_string(result_ptr.to_str().unwrap()).expect("Couldn't create java string!");
+        output.into_inner()
+  }
+
+#[no_mangle]
+    pub unsafe extern fn Java_packageName_className_transactionFee(
+    env: JNIEnv, _: JClass, root_key: JString, utxos: JString, from_addr: JString, to_addrs: JString
+  ) -> jstring {
+      let fee = transaction_fee(env.get_string(root_key).expect("invalid pattern string").as_ptr(),
+      env.get_string(utxos).expect("invalid pattern string").as_ptr(),
+      env.get_string(from_addr).expect("invalid pattern string").as_ptr(),
+      env.get_string(to_addrs).expect("invalid pattern string").as_ptr(),
+      );
+      let fee_ptr = ffi::CString::from_raw(fee);
+      let output = env.new_string(fee_ptr.to_str().unwrap()).expect("Couldn't create java string!");
+      output.into_inner()
+  }
+
+}

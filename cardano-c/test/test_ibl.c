@@ -24,7 +24,7 @@ int wallet_test_ibl(void) {
 
     printf("address generated: %s\n", address);
 
-    printf("address is valid: %s\n", cardano_address_is_valid(address) ? "NO" : "YES");
+    printf("address is valid: %s\n", validate_address(address));
 
     const char *utxos = "[{\"id\": \"364c1e11f5c33d1e49c239a097a4a5f5dec40a03928d9a8db1d6c2604e200927\", \"index\": 0, \"value\": 280000}]";
     const char *to_addrs = "[{\"addr\": \"Ae2tdPwUPEZ3to1tD3ovyREAN5AajAPWuehHRSd5kNkTqgv2zkk4W4v14cS\",\"value\": 100000}]";
@@ -36,10 +36,9 @@ int wallet_test_ibl(void) {
         printf("Failed to create new transaction\n");
     }
 
-    int fee = transaction_fee(rootkey, utxos, address, to_addrs);
-    if (fee != 0) {
-        printf("Trx Fee: %d\n", fee);
-    }
+    const char * fee = transaction_fee(rootkey, utxos, address, to_addrs);
+    
+    printf("Trx Fee: %s\n", fee);
 
     return 0;
 }
