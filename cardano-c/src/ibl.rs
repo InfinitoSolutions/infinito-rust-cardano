@@ -24,7 +24,6 @@ use serde_json::{Value, Error, error::ErrorCode};
 const PROTOCOL_MAGIC : u32 = 764824073;
 const DEBUG: bool = false;
 type WalletPtr  = *mut bip44::Wallet;
-type AccountPtr = *mut bip44::Account<hdwallet::XPub>;
 
 #[no_mangle]
 pub extern "C"
@@ -103,15 +102,6 @@ fn delete_wallet(wallet_ptr: WalletPtr)
     };
 }
 
-#[no_mangle]
-pub extern "C"
-fn delete_account(account_ptr: AccountPtr)
-{
-    unsafe {
-        Box::from_raw(account_ptr)
-    };
-}
-
 #[derive(Debug)]
 struct Address {
     wallet  : WalletPtr,
@@ -128,10 +118,7 @@ fn cardano_generate_address ( root_key       : *const c_char
     let wallet_ptr = create_wallet(root_key);
     let wallet     = unsafe {wallet_ptr.as_mut()}.expect("Not a NULL PTR");
 
-    let account     = wallet.create_account("", account_index);
-    let account_box = Box::new(account.public()); 
-    let account_ptr = Box::into_raw(account_box);
-    let account     = unsafe {account_ptr.as_mut()}.expect("Not a NULL PTR");
+    let account     = wallet.create_account("", account_index).public();
 
     let addr_type = if internal {
         bip44::AddrType::Internal
@@ -150,8 +137,6 @@ fn cardano_generate_address ( root_key       : *const c_char
             c_address   = format!("{}",address);
         }).count();
 
-    delete_account(account_ptr);
-
     Address {
         wallet  : wallet_ptr,
         address : ffi::CString::new(c_address).unwrap().into_raw()
@@ -167,8 +152,9 @@ fn generate_address ( root_key       : *const c_char
                     , num_indices    : usize)
 -> *mut c_char
 {
-    let address = cardano_generate_address(root_key, account_index, internal, from_index, num_indices).address;
-    address
+    let result = cardano_generate_address(root_key, account_index, internal, from_index, num_indices);
+    delete_wallet(result.wallet);
+    result.address
 }
 
 #[derive(Debug)]
@@ -257,7 +243,6 @@ fn cardano_new_transaction  ( root_key  : *const c_char
     }
 
     delete_wallet(wallet_ptr);
-
     return Ok(Transaction {
         txaux   : txaux,
         fee     : fee
