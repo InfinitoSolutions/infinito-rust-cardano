@@ -12,24 +12,25 @@ int wallet_test_ibl(void) {
     const char* mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
     const char* password  = "password";
 
-    create_rootkey_from_entropy(mnemonics, password, strlen(password), &rootkey);
+    rootkey = create_rootkey_from_entropy(mnemonics, password, strlen(password));
+    // rootkey = create_rootkey(mnemonics, password);
     if (!rootkey) {
         return -1;
     }
 
     printf("rootkey: %s\n", rootkey);
 
-    cardano_wallet *wallet = generate_address(rootkey, 0, 0, 0, 1, &address);
+    address = generate_address(rootkey, 0, 0, 0, 1);
 
     printf("address generated: %s\n", address);
 
     printf("address is valid: %s\n", cardano_address_is_valid(address) ? "NO" : "YES");
 
-    const char *utxos = "[{\"id\": \"e28c7bf914c855a9ceaf1741a251ab3cc001bd6ccac874b02bacf2f3a40e13c4\", \"index\": 1, \"value\": 731962}]";
-    const char *to_addrs = "[{\"addr\": \"Ae2tdPwUPEYxuoq9NbrPB9VodNUmhdBQz9nJBk7UPisyXmPyGje3i9k3x82\",\"value\": 100000}]";
+    const char *utxos = "[{\"id\": \"364c1e11f5c33d1e49c239a097a4a5f5dec40a03928d9a8db1d6c2604e200927\", \"index\": 0, \"value\": 280000}]";
+    const char *to_addrs = "[{\"addr\": \"Ae2tdPwUPEZ3to1tD3ovyREAN5AajAPWuehHRSd5kNkTqgv2zkk4W4v14cS\",\"value\": 100000}]";
     static char *signed_trx;
-    bool result = new_transaction(rootkey, utxos, address, to_addrs, &signed_trx);
-    if (result) {
+    signed_trx = new_transaction(rootkey, utxos, address, to_addrs);
+    if (signed_trx) {
         printf("Signed trx: %s\n", signed_trx);
     } else {
         printf("Failed to create new transaction\n");
