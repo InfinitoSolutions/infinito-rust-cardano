@@ -9,7 +9,7 @@ int wallet_test_ibl(void) {
     static char *address;
     static char *rootkey;
 
-    const char* mnemonics = "abandon abandon abandon abandon abandon address abandon abandon abandon abandon abandon address";
+    const char* mnemonics = "abandon ability able about above absent absorb abstract absurd abuse access accident";
     const char* password  = "password";
 
     // rootkey = create_rootkey_from_entropy(mnemonics, password, strlen(password));
@@ -26,8 +26,9 @@ int wallet_test_ibl(void) {
 
     printf("address is valid: %s\n", cardano_address_is_valid(address) ? "NO" : "YES");
 
-    const char *utxos = "[{\"id\": \"364c1e11f5c33d1e49c239a097a4a5f5dec40a03928d9a8db1d6c2604e200927\", \"index\": 0, \"value\": 280000}]";
-    const char *to_addrs = "[{\"addr\": \"Ae2tdPwUPEZ3to1tD3ovyREAN5AajAPWuehHRSd5kNkTqgv2zkk4W4v14cS\",\"value\": 100000}]";
+    const char *utxos = "[{\"id\": \"ef81b5ce3628fff9e996acfebd613148171471f2f8a7f486b394d560b08a501c\", \"index\": 1, \"value\": 98731962}]";
+    const char *to_addrs = "[{\"addr\": \"Ae2tdPwUPEYzqxHEMBtphXwpCjYoKytf42tC9F3wruqNSkr5hYD6r5eoyas\",\"value\": 10000000}]";
+    
     static char *signed_trx;
     signed_trx = new_transaction(rootkey, utxos, address, to_addrs);
     if (signed_trx) {
@@ -39,6 +40,14 @@ int wallet_test_ibl(void) {
     int fee = transaction_fee(rootkey, utxos, address, to_addrs);
     if (fee != 0) {
         printf("Trx Fee: %d\n", fee);
+    }
+
+    static char *txid;
+    txid = get_txid(rootkey, utxos, address, to_addrs);
+    if (txid) {
+        printf("txid: %s\n", txid);
+    } else {
+        printf("Failed to get txid\n");
     }
 
     return 0;
