@@ -160,7 +160,8 @@ fn generate_address ( root_key       : *const c_char
 #[derive(Debug)]
 struct Transaction {
     txaux   : tx::TxAux,
-    fee     : fee::Fee
+    fee     : fee::Fee,
+    txid    : *mut c_char
 }
 
 fn cardano_new_transaction  ( root_key  : *const c_char
@@ -242,10 +243,13 @@ fn cardano_new_transaction  ( root_key  : *const c_char
         println!("###################### End ######################");
     }
 
+    let txid = format!("{}", txaux.tx.id());
+
     delete_wallet(wallet_ptr);
     return Ok(Transaction {
         txaux   : txaux,
-        fee     : fee
+        fee     : fee,
+        txid    : ffi::CString::new(txid).unwrap().into_raw()
     })
 }
 
@@ -278,4 +282,19 @@ fn transaction_fee( root_key : *const c_char, utxos : *const c_char, from_addr :
         Err(_e) => 0,
     }
 }
+
+#[no_mangle]
+pub extern "C"
+fn get_txid( root_key : *const c_char, utxos : *const c_char, from_addr : *const c_char, to_addrs: *const c_char ) -> *mut c_char
+{
+    let result = cardano_new_transaction(root_key, utxos, from_addr, to_addrs);
+    match result {
+        Ok(v) => {
+            let txid = unsafe { ffi::CStr::from_ptr(v.txid).to_str().unwrap() };
+            ffi::CString::new(txid).unwrap().into_raw()
+        },
+        Err(_e) => return ptr::null_mut(),
+    }
+}
+
 
