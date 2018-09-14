@@ -36,7 +36,7 @@ int wallet_test_ibl(void) {
         printf("Failed to create new transaction\n");
     }
 
-    const char * fee = transaction_fee(rootkey, utxos, address, to_addrs);
+    const char * fee = transaction_fee(utxos, address, to_addrs);
     
     printf("Trx Fee: %s\n", fee);
 

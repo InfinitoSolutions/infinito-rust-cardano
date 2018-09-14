@@ -8,10 +8,11 @@ use cardano::util::{self, hex};
 use cardano::hdwallet::{self, XPrv, XPRV_SIZE};
 use cardano::wallet::scheme::{Wallet};
 use cardano::bip::bip39::{self, Mnemonics, MnemonicString, dictionary};
-use cardano::{config::ProtocolMagic, fee, txutils, tx, coin};
+use cardano::{config::ProtocolMagic, txutils, tx, coin};
 use cardano::util::base58;
 use cardano::address::ExtendedAddr;
 use cardano::tx::{txaux_serialize};
+use cardano::fee::{self, SelectionAlgorithm};
 
 use cardano::bip;
 
@@ -249,6 +250,87 @@ fn cardano_new_transaction  ( root_key  : *const c_char
     })
 }
 
+#[derive(Debug)]
+struct CalFee {
+    fee     : fee::Fee
+}
+
+fn cardano_calculate_fee  ( utxos     : *const c_char
+                            , from_addr : *const c_char
+                            , to_addrs  : *const c_char )
+-> Result<CalFee, Error> 
+{
+    // parse input c_char to string
+    let utxos = unsafe { ffi::CStr::from_ptr(utxos) };
+    let addrs = unsafe { ffi::CStr::from_ptr(to_addrs) };
+
+    let utxos_str = utxos.to_str().unwrap();
+    let addrs_str = addrs.to_str().unwrap();
+
+    // Parse the string of data into json
+    let utxos_json: Value = serde_json::from_str(&utxos_str.to_string())?;
+    let addrs_json: Value = serde_json::from_str(&addrs_str.to_string())?;
+
+    if !utxos_json.is_array() || !addrs_json.is_array() {
+        return Err(Error::syntax(ErrorCode::ExpectedObjectOrArray, 1, 1));
+    }
+
+    // get input array length
+    let utxos_arr_len = utxos_json.as_array().unwrap().len();
+    let addrs_arr_len = addrs_json.as_array().unwrap().len();
+
+    if utxos_arr_len <= 0 || addrs_arr_len <= 0 {
+        return Err(Error::syntax(ErrorCode::ExpectedObjectOrArray, 1, 1));
+    }
+
+    // init input & output of transaction
+    let mut inputs = vec![];
+    let mut outputs = vec![];
+
+    // convert from_addr from string to ExtendedAddr 
+    let from_addr = unsafe {
+        ffi::CStr::from_ptr(from_addr).to_string_lossy()
+    };
+
+    let from_addr_bytes = base58::decode_bytes(from_addr.as_bytes()).unwrap();
+    let from = ExtendedAddr::from_bytes(&from_addr_bytes[..]).unwrap();
+
+    // init transaction input from utxos
+    for x in 0..utxos_arr_len {
+        let trx_id = &utxos_json[x]["id"].as_str().unwrap();        
+        let txin = tx::TxIn::new(tx::TxId::from_slice(&hex::decode(trx_id).unwrap()).unwrap(), utxos_json[x]["index"].to_string().parse::<u32>().unwrap());
+        
+        let addressing = bip44::Addressing::new(0, bip44::AddrType::External, 0).unwrap();
+        let txout = tx::TxOut::new(from.clone(), coin::Coin::new(utxos_json[x]["value"].to_string().parse::<u64>().unwrap()).unwrap());
+
+        inputs.push(txutils::Input::new(txin, txout, addressing));
+    }
+
+    // init transaction output from to_address
+    for x in 0..addrs_arr_len {
+        let to_raw = base58::decode_bytes(addrs_json[x]["addr"].as_str().unwrap().as_bytes()).unwrap();
+        let to = ExtendedAddr::from_bytes(&to_raw[..]).unwrap();
+
+        outputs.push(tx::TxOut::new(to.clone(), coin::Coin::new(addrs_json[x]["value"].to_string().parse::<u64>().unwrap()).unwrap()))
+    }
+    let alg = fee::LinearFee::default();
+    let selection_policy = fee::SelectionPolicy::default();
+    let output_policy = txutils::OutputPolicy::One(from.clone());
+    let result = alg.compute(
+        selection_policy,
+        inputs.iter(),
+        outputs.iter(),
+        &output_policy
+    );
+    let (fee, _selected_inputs, _change) = match result {
+        Err(err) => { panic!("error {:#?}", err) },
+        Ok(v) => v
+    };
+    return Ok(CalFee {
+        fee     : fee
+    })
+}
+
 #[no_mangle]
 pub extern "C"
 fn new_transaction( root_key : *const c_char, utxos : *const c_char, from_addr : *const c_char, to_addrs: *const c_char )
@@ -270,9 +352,9 @@ fn new_transaction( root_key : *const c_char, utxos : *const c_char, from_addr :
 
 #[no_mangle]
 pub extern "C"
-fn transaction_fee( root_key : *const c_char, utxos : *const c_char, from_addr : *const c_char, to_addrs: *const c_char ) -> *mut c_char
+fn transaction_fee(utxos : *const c_char, from_addr : *const c_char, to_addrs: *const c_char ) -> *mut c_char
 {
-    let result = cardano_new_transaction(root_key, utxos, from_addr, to_addrs);
+    let result = cardano_calculate_fee(utxos, from_addr, to_addrs);
     match result {
         Ok(v) => {
             let fee = v.fee.to_coin().to_integral().to_string();
@@ -309,7 +391,7 @@ pub mod android {
   use self::jni::objects::{JClass, JString};
   use self::jni::sys::{jint, jstring };
 #[no_mangle]
-    pub unsafe extern fn Java_packageName_className_createTransaction(
+    pub unsafe extern fn Java_io_infinito_wallet_MobileAppBridge_createTransaction(
     env: JNIEnv, _: JClass, root_key: JString, utxos: JString, from_addr: JString, to_addrs: JString
   ) -> jstring {
       let transaction = new_transaction(env.get_string(root_key).expect("invalid pattern string").as_ptr(),
@@ -323,7 +405,7 @@ pub mod android {
   }
 
   #[no_mangle]
-    pub unsafe extern fn Java_packageName_className_createAddressFromRootKey(
+    pub unsafe extern fn Java_io_infinito_wallet_MobileAppBridge_createAddressFromRootKey(
     env: JNIEnv, _: JClass, rootkey: JString, account_index: jint, internal: jint, from_index: jint, num_indices: jint
   ) -> jstring {
       let address = generate_address(env.get_string(rootkey).expect("invalid pattern string").as_ptr(),
@@ -338,7 +420,7 @@ pub mod android {
   }
 
     #[no_mangle]
-    pub unsafe extern fn Java_packageName_className_createRootKey(
+    pub unsafe extern fn Java_io_infinito_wallet_MobileAppBridge_createRootKey(
     env: JNIEnv, _: JClass, mnemonics: JString, password: JString
   ) -> jstring {
       let rootkey = create_rootkey(env.get_string(mnemonics).expect("invalid pattern string").as_ptr(), env.get_string(password).expect("invalid pattern string").as_ptr());
@@ -348,7 +430,7 @@ pub mod android {
   }
 
   #[no_mangle]
-    pub unsafe extern fn Java_packageName_className_validateAddress(
+    pub unsafe extern fn Java_io_infinito_wallet_MobileAppBridge_validateAddress(
     env: JNIEnv, _: JClass, address: JString
   ) -> jstring {
         let result = validate_address(env.get_string(address).expect("invalid pattern string").as_ptr());
@@ -358,11 +440,10 @@ pub mod android {
   }
 
 #[no_mangle]
-    pub unsafe extern fn Java_packageName_className_transactionFee(
-    env: JNIEnv, _: JClass, root_key: JString, utxos: JString, from_addr: JString, to_addrs: JString
+    pub unsafe extern fn Java_io_infinito_wallet_MobileAppBridge_transactionFee(
+    env: JNIEnv, _: JClass, utxos: JString, from_addr: JString, to_addrs: JString
   ) -> jstring {
-      let fee = transaction_fee(env.get_string(root_key).expect("invalid pattern string").as_ptr(),
-      env.get_string(utxos).expect("invalid pattern string").as_ptr(),
+      let fee = transaction_fee(env.get_string(utxos).expect("invalid pattern string").as_ptr(),
       env.get_string(from_addr).expect("invalid pattern string").as_ptr(),
       env.get_string(to_addrs).expect("invalid pattern string").as_ptr(),
       );
