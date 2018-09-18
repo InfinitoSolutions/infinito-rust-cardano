@@ -323,9 +323,10 @@ fn cardano_calculate_fee  ( utxos     : *const c_char
         &output_policy
     );
     let (fee, _selected_inputs, _change) = match result {
-        Err(err) => { panic!("error {:#?}", err) },
+        Err(_err) => (fee::Fee::new(coin::Coin::zero()), Vec::new(), coin::Coin::zero()),
         Ok(v) => v
     };
+
     return Ok(CalFee {
         fee     : fee
     })
@@ -358,6 +359,7 @@ fn transaction_fee(utxos : *const c_char, from_addr : *const c_char, to_addrs: *
     match result {
         Ok(v) => {
             let fee = v.fee.to_coin().to_integral().to_string();
+                 println!("  fee dfdf: {}", fee);
             ffi::CString::new(fee).unwrap().into_raw()
         },
         Err(_e) => return ptr::null_mut(),
