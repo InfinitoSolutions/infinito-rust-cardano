@@ -359,7 +359,6 @@ fn transaction_fee(utxos : *const c_char, from_addr : *const c_char, to_addrs: *
     match result {
         Ok(v) => {
             let fee = v.fee.to_coin().to_integral().to_string();
-                 println!("  fee dfdf: {}", fee);
             ffi::CString::new(fee).unwrap().into_raw()
         },
         Err(_e) => return ptr::null_mut(),
@@ -369,17 +368,17 @@ fn transaction_fee(utxos : *const c_char, from_addr : *const c_char, to_addrs: *
 #[no_mangle]
 pub extern fn validate_address(c_address: *const c_char) -> *mut c_char {
     let address_base58 = unsafe { ffi::CStr::from_ptr(c_address).to_bytes() };
-    let recipient;
+    let result;
     if let Ok(address_raw) = base58::decode_bytes(address_base58) {
         if let Ok(_) = ExtendedAddr::from_bytes(&address_raw[..]) {
-            recipient = "0";
+            result = "0";
         } else {
-            recipient = "2";
+            result = "2";
         }
     } else {
-        recipient = "1";
+        result = "1";
     }
-        ffi::CString::new(recipient).unwrap().into_raw()
+        ffi::CString::new(result).unwrap().into_raw()
 }
 
 #[no_mangle]
