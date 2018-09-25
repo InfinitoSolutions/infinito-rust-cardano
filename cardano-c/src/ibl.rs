@@ -382,7 +382,43 @@ pub extern fn validate_address(c_address: *const c_char) -> *mut c_char {
         ffi::CString::new(recipient).unwrap().into_raw()
 }
 
+#[no_mangle]
+pub extern "C"
+fn validate_private_key(root_key: *const c_char)
+    -> *mut c_char
+{
+    let root_key = unsafe {
+        ffi::CStr::from_ptr(root_key).to_string_lossy()
+    };
+    let result;
+    let pk_string = &root_key;
+    let mut is_hex_digit = true;
+    for character in pk_string.to_string().chars() {
+        is_hex_digit = is_hex_digit && character.is_ascii_hexdigit();
+        if !is_hex_digit {
+            break;
+        }
+    }
+    if is_hex_digit {
+        let xprv_vec = hex::decode(&root_key).unwrap();
+        let mut xprv_bytes = [0; hdwallet::XPRV_SIZE];
+        if xprv_vec.len() != hdwallet::XPRV_SIZE {
+            result = "1";
+        } else {
+            xprv_bytes.copy_from_slice(&xprv_vec[..]);
+            let is_valid = hdwallet::XPrv::validate_private_key(xprv_bytes);
+            if is_valid {
+                result = "0";
 
+            } else {
+                result = "1";
+            }
+        }
+    } else {
+        result = "1";
+    }
+    ffi::CString::new(result).unwrap().into_raw()
+}
 
 #[cfg(feature = "jni")]
 #[allow(non_snake_case)]
@@ -393,7 +429,7 @@ pub mod android {
   use self::jni::objects::{JClass, JString};
   use self::jni::sys::{jint, jstring };
 #[no_mangle]
-    pub unsafe extern fn Java_io_infinito_wallet_MobileAppBridge_createTransaction(
+    pub unsafe extern fn Java_com_reactlibrary_RNIblCardanoModule_createTransaction(
     env: JNIEnv, _: JClass, root_key: JString, utxos: JString, from_addr: JString, to_addrs: JString
   ) -> jstring {
       let transaction = new_transaction(env.get_string(root_key).expect("invalid pattern string").as_ptr(),
@@ -407,7 +443,7 @@ pub mod android {
   }
 
   #[no_mangle]
-    pub unsafe extern fn Java_io_infinito_wallet_MobileAppBridge_createAddressFromRootKey(
+    pub unsafe extern fn Java_com_reactlibrary_RNIblCardanoModule_createAddressFromRootKey(
     env: JNIEnv, _: JClass, rootkey: JString, account_index: jint, internal: jint, from_index: jint, num_indices: jint
   ) -> jstring {
       let address = generate_address(env.get_string(rootkey).expect("invalid pattern string").as_ptr(),
@@ -422,7 +458,7 @@ pub mod android {
   }
 
     #[no_mangle]
-    pub unsafe extern fn Java_io_infinito_wallet_MobileAppBridge_createRootKey(
+    pub unsafe extern fn Java_com_reactlibrary_RNIblCardanoModule_createRootKey(
     env: JNIEnv, _: JClass, mnemonics: JString, password: JString
   ) -> jstring {
       let rootkey = create_rootkey(env.get_string(mnemonics).expect("invalid pattern string").as_ptr(), env.get_string(password).expect("invalid pattern string").as_ptr());
@@ -432,7 +468,7 @@ pub mod android {
   }
 
   #[no_mangle]
-    pub unsafe extern fn Java_io_infinito_wallet_MobileAppBridge_validateAddress(
+    pub unsafe extern fn Java_com_reactlibrary_RNIblCardanoModule_validateAddress(
     env: JNIEnv, _: JClass, address: JString
   ) -> jstring {
         let result = validate_address(env.get_string(address).expect("invalid pattern string").as_ptr());
@@ -441,8 +477,18 @@ pub mod android {
         output.into_inner()
   }
 
+    #[no_mangle]
+    pub unsafe extern fn Java_com_reactlibrary_RNIblCardanoModule_validatePrivateKey(
+    env: JNIEnv, _: JClass, rootKey: JString
+  ) -> jstring {
+        let result = validate_private_key(env.get_string(rootKey).expect("invalid pattern string").as_ptr());
+        let result_ptr = ffi::CString::from_raw(result);
+        let output = env.new_string(result_ptr.to_str().unwrap()).expect("Couldn't create java string!");
+        output.into_inner()
+  }
+
 #[no_mangle]
-    pub unsafe extern fn Java_io_infinito_wallet_MobileAppBridge_transactionFee(
+    pub unsafe extern fn Java_com_reactlibrary_RNIblCardanoModule_transactionFee(
     env: JNIEnv, _: JClass, utxos: JString, from_addr: JString, to_addrs: JString
   ) -> jstring {
       let fee = transaction_fee(env.get_string(utxos).expect("invalid pattern string").as_ptr(),
