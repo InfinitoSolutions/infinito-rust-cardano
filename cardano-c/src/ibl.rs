@@ -323,9 +323,10 @@ fn cardano_calculate_fee  ( utxos     : *const c_char
         &output_policy
     );
     let (fee, _selected_inputs, _change) = match result {
-        Err(err) => { panic!("error {:#?}", err) },
+        Err(_err) => (fee::Fee::new(coin::Coin::zero()), Vec::new(), coin::Coin::zero()),
         Ok(v) => v
     };
+
     return Ok(CalFee {
         fee     : fee
     })
