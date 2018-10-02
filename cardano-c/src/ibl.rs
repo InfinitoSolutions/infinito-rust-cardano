@@ -1,6 +1,7 @@
 extern crate cbor_event;
 extern crate rustc_serialize;
 extern crate serde_json;
+extern crate base64;
 
 use cardano::address;
 use cardano::wallet::{bip44, keygen};
@@ -18,11 +19,12 @@ use cardano::bip;
 use std::{ffi, slice, ptr};
 use std::os::raw::{c_char};
 
-use rustc_serialize::base64::{self, ToBase64};
+use rustc_serialize::base64::{ToBase64};
+use base64::{encode, decode};
 use serde_json::{Value, Error, error::ErrorCode};
 
 const PROTOCOL_MAGIC : u32 = 764824073;
-const DEBUG: bool = false;
+const DEBUG: bool = true;
 type WalletPtr  = *mut bip44::Wallet;
 
 #[no_mangle]
@@ -265,7 +267,7 @@ fn new_transaction( root_key : *const c_char, utxos : *const c_char, from_addr :
             let ser = cbor_event::se::Serializer::new_vec();
             let txbytes = txaux_serialize(&v.txaux.tx, &v.txaux.witness, ser).unwrap().finalize();
             
-            let result = txbytes.to_base64(base64::STANDARD);
+            let result = txbytes.to_base64(rustc_serialize::base64::STANDARD);
             ffi::CString::new(result).unwrap().into_raw()
         },
         Err(_e) => return ptr::null_mut(),
@@ -278,7 +280,7 @@ fn transaction_fee( root_key : *const c_char, utxos : *const c_char, from_addr :
 {
     let result = cardano_new_transaction(root_key, utxos, from_addr, to_addrs);
     match result {
-        Ok(v) => v.fee.to_coin().to_integral(),
+        Ok(v) => *v.fee.to_coin() as u64,
         Err(_e) => 0,
     }
 }
@@ -295,6 +297,25 @@ fn get_txid( root_key : *const c_char, utxos : *const c_char, from_addr : *const
         },
         Err(_e) => return ptr::null_mut(),
     }
+}
+
+#[no_mangle]
+pub extern "C"
+fn decode_raw( raw : *const c_char)
+{
+        // let raw = "goOfggDYGFgkglgg6MUQEk27Jp6YYnQSyYp8ZFyT0b0xEnSTOqxhhvhSY2sB/5+CgtgYWEKDWBzUi80URjMCiZ2tTIOD4MGyALnd4HW109rswwqdoQFYHlgcxdlJsC4jIxzHH/ppHenN2yDvmwjmLrLF6FeJLAAaI6X2cho7i4fAgoLYGFghg1gcjSloNa0rJR3Kg3hoH8p8nUva7ctQCzcjSDqu/KAAGqjQ9W0bAAAAA0KDuDD/oIGCANgYWIWCWEDV82rY3Tcl9dMrAOEBGOecgVamwUppCh0DpzNZKO7x+9NK7ywQAb260xRx9qDJ4jXfa6BxBsZHlp8BWEEaOmzZWECsDHPwjKRgJ1ENI8hDjs5E6ps4WoApM1JXrYen+hx8Z54yWFWBf7wo77a/YM+idUd2fVHmdNiJ38lrqJBU6uoH";
+    let rawtx = unsafe { ffi::CStr::from_ptr(raw) };
+    let raw_str = rawtx.to_str().unwrap();
+    let raw_bytes = &decode(raw_str).unwrap()[..];
+
+    let _txaux : tx::TxAux = cbor_event::de::RawCbor::from(raw_bytes).deserialize().expect("to decode a TxAux");
+    let mut raw = cbor_event::de::RawCbor::from(raw_bytes);
+    let _txaux : tx::TxAux = cbor_event::de::Deserialize::deserialize(&mut raw).unwrap();
+    
+    println!("############## Transaction Decode #############");
+    println!("  txaux {}", _txaux);
+    println!("  tx id {}", _txaux.tx.id());
+    println!("###################### End ######################");
 }
 
 
