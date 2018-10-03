@@ -193,7 +193,7 @@ impl SelectionAlgorithm for LinearFee {
             let estimated_fee = (self.estimate(txbytes.len() + CBOR_TXAUX_OVERHEAD + (TX_IN_WITNESS_CBOR_SIZE * selected_inputs.len())))?;
 
             // add the change in the estimated fee
-            if let Ok(change_value) = output_value - input_value - estimated_fee.to_coin() {
+            if let Ok(change_value) = input_value - output_value - estimated_fee.to_coin() {
                 if change_value > Coin::zero() {
                     match output_policy {
                         OutputPolicy::One(change_addr) => tx.add_output(TxOut::new(change_addr.clone(), change_value)),
