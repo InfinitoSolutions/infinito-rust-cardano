@@ -313,6 +313,7 @@ fn decode_raw( raw : *const c_char)
     let _txaux : tx::TxAux = cbor_event::de::Deserialize::deserialize(&mut raw).unwrap();
     
     println!("############## Transaction Decode #############");
+    println!("  raw_bytes {}", raw_bytes.len());
     println!("  txaux {}", _txaux);
     println!("  tx id {}", _txaux.tx.id());
     println!("###################### End ######################");
