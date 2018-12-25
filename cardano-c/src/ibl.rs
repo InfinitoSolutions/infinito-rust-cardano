@@ -332,6 +332,102 @@ fn cardano_calculate_fee  ( utxos     : *const c_char
     })
 }
 
+#[derive(Debug)]
+struct SizeTx {
+    size     : coin::Coin
+}
+
+fn cardano_calculate_tx_size  ( utxos     : *const c_char
+                            , from_addr : *const c_char
+                            , to_addrs  : *const c_char )
+-> Result<SizeTx, Error> 
+{
+    // parse input c_char to string
+    let utxos = unsafe { ffi::CStr::from_ptr(utxos) };
+    let addrs = unsafe { ffi::CStr::from_ptr(to_addrs) };
+
+    let utxos_str = utxos.to_str().unwrap();
+    let addrs_str = addrs.to_str().unwrap();
+
+    // Parse the string of data into json
+    let utxos_json: Value = serde_json::from_str(&utxos_str.to_string())?;
+    let addrs_json: Value = serde_json::from_str(&addrs_str.to_string())?;
+
+    if !utxos_json.is_array() || !addrs_json.is_array() {
+        return Err(Error::syntax(ErrorCode::ExpectedObjectOrArray, 1, 1));
+    }
+
+    // get input array length
+    let utxos_arr_len = utxos_json.as_array().unwrap().len();
+    let addrs_arr_len = addrs_json.as_array().unwrap().len();
+
+    if utxos_arr_len <= 0 || addrs_arr_len <= 0 {
+        return Err(Error::syntax(ErrorCode::ExpectedObjectOrArray, 1, 1));
+    }
+
+    // init input & output of transaction
+    let mut inputs = vec![];
+    let mut outputs = vec![];
+
+    // convert from_addr from string to ExtendedAddr 
+    let from_addr = unsafe {
+        ffi::CStr::from_ptr(from_addr).to_string_lossy()
+    };
+
+    let from_addr_bytes = base58::decode_bytes(from_addr.as_bytes()).unwrap();
+    let from = ExtendedAddr::from_bytes(&from_addr_bytes[..]).unwrap();
+
+    // init transaction input from utxos
+    for x in 0..utxos_arr_len {
+        let trx_id = &utxos_json[x]["id"].as_str().unwrap();        
+        let txin = tx::TxIn::new(tx::TxId::from_slice(&hex::decode(trx_id).unwrap()).unwrap(), utxos_json[x]["index"].to_string().parse::<u32>().unwrap());
+        
+        let addressing = bip44::Addressing::new(0, bip44::AddrType::External, 0).unwrap();
+        let txout = tx::TxOut::new(from.clone(), coin::Coin::new(utxos_json[x]["value"].to_string().parse::<u64>().unwrap()).unwrap());
+
+        inputs.push(txutils::Input::new(txin, txout, addressing));
+    }
+
+    // init transaction output from to_address
+    for x in 0..addrs_arr_len {
+        let to_raw = base58::decode_bytes(addrs_json[x]["addr"].as_str().unwrap().as_bytes()).unwrap();
+        let to = ExtendedAddr::from_bytes(&to_raw[..]).unwrap();
+
+        outputs.push(tx::TxOut::new(to.clone(), coin::Coin::new(addrs_json[x]["value"].to_string().parse::<u64>().unwrap()).unwrap()))
+    }
+    let alg = fee::LinearFee::default();
+    let selection_policy = fee::SelectionPolicy::default();
+    let output_policy = txutils::OutputPolicy::One(from.clone());
+    let result = alg.compute_tx_size(
+        selection_policy,
+        inputs.iter(),
+        outputs.iter(),
+        &output_policy
+    );
+    let size_tx = match result {
+        Err(_err) => (coin::Coin::zero()),
+        Ok(v) => v
+    };
+
+    return Ok(SizeTx {
+        size     : size_tx
+    })
+}
+
+#[no_mangle]
+pub extern "C"
+fn transaction_size(utxos : *const c_char, from_addr : *const c_char, to_addrs: *const c_char ) -> *mut c_char
+{
+    let result = cardano_calculate_tx_size(utxos, from_addr, to_addrs);
+    match result {
+        Ok(v) => {
+            let size_tx = v.size.to_integral().to_string();
+            ffi::CString::new(size_tx).unwrap().into_raw()
+        },
+        Err(_e) => return ptr::null_mut(),
+    }
+}
+
 #[no_mangle]
 pub extern "C"
 fn new_transaction( root_key : *const c_char, utxos : *const c_char, from_addr : *const c_char, to_addrs: *const c_char )
@@ -496,6 +592,19 @@ pub mod android {
       );
       let fee_ptr = ffi::CString::from_raw(fee);
       let output = env.new_string(fee_ptr.to_str().unwrap()).expect("Couldn't create java string!");
+      output.into_inner()
+  }
+
+    #[no_mangle]
+    pub unsafe extern fn Java_com_reactlibrary_RNIblCardanoModule_transactionSize(
+    env: JNIEnv, _: JClass, utxos: JString, from_addr: JString, to_addrs: JString
+  ) -> jstring {
+      let size_tx = transaction_size(env.get_string(utxos).expect("invalid pattern string").as_ptr(),
+      env.get_string(from_addr).expect("invalid pattern string").as_ptr(),
+      env.get_string(to_addrs).expect("invalid pattern string").as_ptr(),
+      );
+      let size_tx_ptr = ffi::CString::from_raw(size_tx);
+      let output = env.new_string(size_tx_ptr.to_str().unwrap()).expect("Couldn't create java string!");
       output.into_inner()
   }
 

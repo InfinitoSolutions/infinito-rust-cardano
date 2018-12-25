@@ -22,5 +22,6 @@ char* validate_address(const char *address);
 char* validate_private_key(const char* root_key);
 char *new_transaction( const char *root_key, const char *utxos, const char *from_addr, const char *to_addrs );
 char* transaction_fee( const char *utxos, const char *from_addr, const char *to_addrs);
+char* transaction_size( const char *utxos, const char *from_addr, const char *to_addrs);
 
 #endif

@@ -39,6 +39,9 @@ int wallet_test_ibl(void) {
     const char * fee = transaction_fee(utxos, address, to_addrs);
     
     printf("Trx Fee: %s\n", fee);
+    const char * size = transaction_size(utxos, "Ae2tdPwUPEYzqxHEMBtphXwpCjYoKytf42tC9F3wruqNSkr5hYD6r5eoyas", to_addrs);
+    
+    printf("Trx size: %s\n", size);
 
     return 0;
 }

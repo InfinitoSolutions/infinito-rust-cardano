@@ -68,6 +68,18 @@ pub trait SelectionAlgorithm {
             , O : 'b + Iterator<Item = &'b TxOut> + Clone
             , Addressing: 'a
     ;
+
+    fn compute_tx_size<'a, 'b, I, O, Addressing>( &self
+                                        , policy: SelectionPolicy
+                                        , inputs: I
+                                        , outputs: O
+                                        , output_policy: &OutputPolicy
+                                        )
+            -> Result<(Coin)>
+        where I : 'a + Iterator<Item = &'a Input<Addressing>> + ExactSizeIterator
+            , O : 'b + Iterator<Item = &'b TxOut> + Clone
+            , Addressing: 'a
+    ;
 }
 
 #[derive(Serialize, Deserialize, PartialEq, PartialOrd, Debug, Clone, Copy)]
@@ -214,6 +226,68 @@ impl SelectionAlgorithm for LinearFee {
         }
 
         Ok((fee, selected_inputs, (input_value - output_value - fee.to_coin())?))
+    }
+
+     fn compute_tx_size<'a, 'b, I, O, Addressing>( &self
+                                        , policy: SelectionPolicy
+                                        , inputs: I
+                                        , outputs: O
+                                        , output_policy: &OutputPolicy
+                                        )
+            -> Result<(Coin)>
+        where I : 'a + Iterator<Item = &'a Input<Addressing>> + ExactSizeIterator
+            , O : 'b + Iterator<Item = &'b TxOut> + Clone
+            , Addressing: 'a
+    {
+        if inputs.len() == 0 { return Err(Error::NoInputs); }
+
+        let output_value = output_sum(outputs.clone())?;
+        let mut fee = self.estimate(0)?;
+        let mut input_value = Coin::zero();
+        let mut selected_inputs = Vec::new();
+
+        // create the Tx on the fly
+        let mut txins = Vec::new();
+        let     txouts : Vec<TxOut> = outputs.cloned().collect();
+
+        // for now we only support this selection algorithm
+        // we need to remove this assert when we extend to more
+        // granulated selection policy
+        assert!(policy == SelectionPolicy::FirstMatchFirst);
+        let mut tx_size : usize = 0;    
+
+        for input in inputs {
+            input_value = (input_value + input.value())?;
+            selected_inputs.push(input);
+            txins.push(input.ptr.clone());
+            // calculate fee from the Tx serialised + estimated size for signing
+            let mut tx = Tx::new_with(txins.clone(), txouts.clone());
+            let txbytes = cbor!(&tx)?;
+
+            let estimated_fee = (self.estimate(txbytes.len() + CBOR_TXAUX_OVERHEAD + (TX_IN_WITNESS_CBOR_SIZE * selected_inputs.len())))?;
+
+            // add the change in the estimated fee
+            if let Ok(change_value) = input_value - output_value - estimated_fee.to_coin() {
+                if change_value > Coin::zero() {
+                    match output_policy {
+                        OutputPolicy::One(change_addr) => tx.add_output(TxOut::new(change_addr.clone(), change_value)),
+                    }
+                }
+            };
+
+            let txbytes = cbor!(&tx)?;
+            let corrected_fee = self.estimate(txbytes.len() + CBOR_TXAUX_OVERHEAD + (TX_IN_WITNESS_CBOR_SIZE * selected_inputs.len()));
+            tx_size = txbytes.len() + CBOR_TXAUX_OVERHEAD + (TX_IN_WITNESS_CBOR_SIZE * selected_inputs.len());
+            fee = corrected_fee?;
+
+            if Ok(input_value) >= (output_value + fee.to_coin()) { break; }
+        }
+        if Ok(input_value) < (output_value + fee.to_coin()) {
+            return Err(Error::NotEnoughInput);
+        }
+        let size = Milli::integral(tx_size as u64);
+        let sizeoutput = Coin::new(size.to_integral())?;
+        Ok(sizeoutput)
     }
 }
 
