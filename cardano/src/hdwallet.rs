@@ -250,6 +250,23 @@ impl XPrv {
         Ok(XPrv(bytes))
     }
 
+
+    /// This function may returns an error if it does not have the expected
+    /// format.
+    pub fn validate_private_key(bytes: [u8;XPRV_SIZE]) -> bool {
+        let scalar = &bytes[0..32];
+        let last   = scalar[31];
+        let first  = scalar[0];
+
+        if (last & 0b1110_0000) != 0b0100_0000 {
+            return false;
+        }
+        if (first & 0b0000_0111) != 0b0000_0000 {
+            return false;
+        }
+        return true
+    }
+
     /// Create a `XPrv` from the given slice. This slice must be of size `XPRV_SIZE`
     /// otherwise it will return `Err`.
     ///

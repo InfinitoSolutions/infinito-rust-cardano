@@ -24,7 +24,7 @@ int wallet_test_ibl(void) {
 
     printf("address generated: %s\n", address);
 
-    printf("address is valid: %s\n", cardano_address_is_valid(address) ? "NO" : "YES");
+    printf("address is valid: %s\n", validate_address(address));
 
     const char *utxos = "[{\"id\": \"ef81b5ce3628fff9e996acfebd613148171471f2f8a7f486b394d560b08a501c\", \"index\": 1, \"value\": 98731962}]";
     const char *to_addrs = "[{\"addr\": \"Ae2tdPwUPEYzqxHEMBtphXwpCjYoKytf42tC9F3wruqNSkr5hYD6r5eoyas\",\"value\": 10000000}]";
@@ -32,15 +32,17 @@ int wallet_test_ibl(void) {
     static char *signed_trx;
     signed_trx = new_transaction(rootkey, utxos, address, to_addrs);
     if (signed_trx) {
-        printf("Signed trx: %s\n", signed_trx);
+        printf("Signed trx success\n");
     } else {
         printf("Failed to create new transaction\n");
     }
 
-    int fee = transaction_fee(rootkey, utxos, address, to_addrs);
-    if (fee != 0) {
-        printf("Trx Fee: %d\n", fee);
-    }
+    const char * fee = transaction_fee(utxos, address, to_addrs);
+    
+    printf("Trx Fee: %s\n", fee);
+    const char * size = transaction_size(utxos, "Ae2tdPwUPEYzqxHEMBtphXwpCjYoKytf42tC9F3wruqNSkr5hYD6r5eoyas", to_addrs);
+    
+    printf("Trx size: %s\n", size);
 
     static char *txid;
     txid = get_txid(rootkey, utxos, address, to_addrs);
@@ -49,6 +51,8 @@ int wallet_test_ibl(void) {
     } else {
         printf("Failed to get txid\n");
     }
+
+    decode_raw(signed_trx);
 
     return 0;
 }
