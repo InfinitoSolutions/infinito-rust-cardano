@@ -32,7 +32,7 @@ int wallet_test_ibl(void) {
     static char *signed_trx;
     signed_trx = new_transaction(rootkey, utxos, address, to_addrs);
     if (signed_trx) {
-        printf("Signed trx: %s\n", signed_trx);
+        printf("Signed trx success\n");
     } else {
         printf("Failed to create new transaction\n");
     }
@@ -49,6 +49,8 @@ int wallet_test_ibl(void) {
     } else {
         printf("Failed to get txid\n");
     }
+
+    decode_raw(signed_trx);
 
     return 0;
 }
