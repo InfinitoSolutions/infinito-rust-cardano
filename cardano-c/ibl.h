@@ -18,10 +18,10 @@ void delete_account(cardano_account *account);
 char *generate_address( const char *key, unsigned int index, int internal, 
                         unsigned int from_index, unsigned long num_indices );
 
-int cardano_address_is_valid(const char *address);
-
+char* validate_address(const char *address);
+char* validate_private_key(const char* root_key);
 char *new_transaction( const char *root_key, const char *utxos, const char *from_addr, const char *to_addrs );
-int transaction_fee( const char *root_key, const char *utxos, const char *from_addr, const char *to_addrs );
-char *get_txid(const char *root_key, const char *utxos, const char *from_addr, const char *to_addrs);
+char* transaction_fee( const char *utxos, const char *from_addr, const char *to_addrs);
+char* transaction_size( const char *utxos, const char *from_addr, const char *to_addrs);
 void decode_raw(const char *raw);
 #endif
