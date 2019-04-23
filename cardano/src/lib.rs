@@ -15,39 +15,59 @@
 //!
 #![cfg_attr(feature = "with-bench", feature(test))]
 
+#[cfg(feature = "generic-serialization")]
 #[macro_use]
 extern crate serde_derive;
+#[cfg(feature = "generic-serialization")]
 extern crate serde;
+
 #[cfg(test)]
 extern crate serde_json;
+#[cfg(test)]
+#[macro_use]
+extern crate lazy_static;
 
 #[cfg(test)]
 #[cfg(feature = "with-bench")]
 extern crate test;
 
+#[cfg(test)]
+#[macro_use]
+extern crate quickcheck;
+
+#[cfg(test)]
+extern crate rand;
+
 extern crate cryptoxide;
 #[macro_use]
 extern crate cbor_event;
 
-mod crc32;
-pub mod util;
-pub mod config;
-pub mod hdwallet;
-pub mod paperwallet;
+extern crate chain_core;
+
+#[cfg(test)]
+extern crate base64;
+
 pub mod address;
-pub mod hdpayload;
-pub mod tx;
-pub mod txutils;
-pub mod fee;
 pub mod coin;
-pub mod redeem;
+pub mod config;
+mod crc32;
+pub mod fee;
 pub mod hash;
+pub mod hdpayload;
+pub mod hdwallet;
+pub mod input_selection;
+pub mod paperwallet;
+pub mod redeem;
+pub mod tx;
+pub mod txbuild;
+pub mod txutils;
+pub mod util;
 
-mod cbor;
 pub mod bip;
-pub mod wallet;
 pub mod block;
+pub mod cbor;
+pub mod wallet;
 
-pub mod vss;
 pub mod merkle;
 pub mod tags;
+pub mod vss;

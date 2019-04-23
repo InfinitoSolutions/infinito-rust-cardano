@@ -1,97 +1,86 @@
 //! Fee calculation and fee algorithms
 
-use std::{fmt, result, ops::{Add, Mul}};
-use coin;
-use coin::{Coin};
-use tx::{TxOut, Tx, TxInWitness, TxAux, txaux_serialize};
-use txutils::{Input, OutputPolicy, output_sum};
 use cbor_event;
+use coin;
+use coin::Coin;
+use std::{
+    ops::{Add, Mul},
+    result,
+};
+use tx::{txaux_serialize_size, Tx, TxAux, TxInWitness};
 
 /// A fee value that represent either a fee to pay, or a fee paid.
-#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
+#[cfg_attr(feature = "generic-serialization", derive(Serialize, Deserialize))]
 pub struct Fee(Coin);
 impl Fee {
-    pub fn new(coin: Coin) -> Self { Fee(coin) }
-    pub fn to_coin(&self) -> Coin { self.0 }
+    pub fn new(coin: Coin) -> Self {
+        Fee(coin)
+    }
+    pub fn to_coin(&self) -> Coin {
+        self.0
+    }
 }
 
 #[derive(Debug)]
 pub enum Error {
-    NoInputs,
-    NoOutputs,
-    NotEnoughInput,
     CoinError(coin::Error),
-    CborError(cbor_event::Error)
-}
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &Error::NoInputs => write!(f, "No inputs given for fee estimation"),
-            &Error::NoOutputs => write!(f, "No outputs given for fee estimation"),
-            &Error::NotEnoughInput => write!(f, "Not enough funds to cover outputs and fees"),
-            &Error::CoinError(ref err) => write!(f, "Error on coin operations: {}", err),
-            &Error::CborError(ref err) => write!(f, "Error while performing cbor serialization: {}", err),
-        }
-    }
+    CborError(cbor_event::Error),
 }
 
 pub type Result<T> = result::Result<T, Error>;
 
 impl From<coin::Error> for Error {
-    fn from(e: coin::Error) -> Error { Error::CoinError(e) }
+    fn from(e: coin::Error) -> Error {
+        Error::CoinError(e)
+    }
 }
 impl From<cbor_event::Error> for Error {
-    fn from(e: cbor_event::Error) -> Error { Error::CborError(e) }
+    fn from(e: cbor_event::Error) -> Error {
+        Error::CborError(e)
+    }
+}
+impl ::std::error::Error for Error {
+    fn cause(&self) -> Option<&::std::error::Error> {
+        match self {
+            Error::CborError(ref err) => Some(err),
+            Error::CoinError(ref err) => Some(err),
+        }
+    }
+}
+impl ::std::fmt::Display for Error {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match self {
+            Error::CborError(_) => write!(f, "invalid cbor encoding"),
+            Error::CoinError(_) => write!(f, "invalid Ada value"),
+        }
+    }
 }
 
-/// Algorithm trait for input selections
-pub trait SelectionAlgorithm {
-    /// This takes from input:
-    /// * Selection Policy
-    /// * The tx inputs with at minimum 1 entry
-    /// * The tx outputs with at minimum 1 entry
-    /// * Extended address of where to send the remain
-    ///
-    /// It returns on success:
-    ///
-    /// * The computed fee associated
-    /// * The inputs selected
-    /// * The number of coin remaining that will be associated to the extended address specified
-    fn compute<'a, 'b, I, O, Addressing>( &self
-                                        , policy: SelectionPolicy
-                                        , inputs: I
-                                        , outputs: O
-                                        , output_policy: &OutputPolicy
-                                        )
-            -> Result<(Fee, Vec<&'a Input<Addressing>>, Coin)>
-        where I : 'a + Iterator<Item = &'a Input<Addressing>> + ExactSizeIterator
-            , O : 'b + Iterator<Item = &'b TxOut> + Clone
-            , Addressing: 'a
-    ;
-
-    fn compute_tx_size<'a, 'b, I, O, Addressing>( &self
-                                        , policy: SelectionPolicy
-                                        , inputs: I
-                                        , outputs: O
-                                        , output_policy: &OutputPolicy
-                                        )
-            -> Result<(Coin)>
-        where I : 'a + Iterator<Item = &'a Input<Addressing>> + ExactSizeIterator
-            , O : 'b + Iterator<Item = &'b TxOut> + Clone
-            , Addressing: 'a
-    ;
-}
-
-#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Debug, Clone, Copy)]
-pub struct Milli (pub u64);
+#[derive(PartialEq, Eq, PartialOrd, Debug, Clone, Copy)]
+#[cfg_attr(feature = "generic-serialization", derive(Serialize, Deserialize))]
+pub struct Milli(u64);
 impl Milli {
-    pub fn new(i: u64, f: u64) -> Self { Milli(i * 1000 + f % 1000) }
-    pub fn integral(i: u64) -> Self { Milli(i*1000) }
+    pub fn new(i: u64, f: u64) -> Self {
+        Milli(i * 1000 + f % 1000)
+    }
+    pub fn integral(i: u64) -> Self {
+        Milli(i * 1000)
+    }
     pub fn to_integral(self) -> u64 {
         // note that we want the ceiling
-        if self.0 % 1000 == 0 { self.0 / 1000 } else { (self.0 / 1000) + 1 }
+        if self.0 % 1000 == 0 {
+            self.0 / 1000
+        } else {
+            (self.0 / 1000) + 1
+        }
     }
-    pub fn to_integral_trunc(self) -> u64 { self.0 / 1000 }
+    pub fn to_integral_trunc(self) -> u64 {
+        self.0 / 1000
+    }
+    pub fn as_millis(self) -> u64 {
+        self.0
+    }
 }
 
 impl Add for Milli {
@@ -119,16 +108,20 @@ impl Mul for Milli {
 }
 
 /// Linear fee using the basic affine formula `A * bytes(txaux) + CONSTANT`
-#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, PartialOrd, Debug, Clone, Copy)]
+#[cfg_attr(feature = "generic-serialization", derive(Serialize, Deserialize))]
 pub struct LinearFee {
     /// this is the minimal fee
-    constant: Milli,
+    pub constant: Milli,
     /// the transaction's size coefficient fee
-    coefficient: Milli,
+    pub coefficient: Milli,
 }
 impl LinearFee {
     pub fn new(constant: Milli, coefficient: Milli) -> Self {
-        LinearFee { constant: constant, coefficient: coefficient }
+        LinearFee {
+            constant: constant,
+            coefficient: coefficient,
+        }
     }
 
     pub fn estimate(&self, sz: usize) -> Result<Fee> {
@@ -141,11 +134,20 @@ impl LinearFee {
 
 /// Calculation of fees for a specific chosen algorithm
 pub trait FeeAlgorithm {
+    fn estimate_overhead(&self, num_bytes: usize) -> Result<Option<Fee>>;
+
     fn calculate_for_txaux(&self, txaux: &TxAux) -> Result<Fee>;
     fn calculate_for_txaux_component(&self, tx: &Tx, witnesses: &Vec<TxInWitness>) -> Result<Fee>;
 }
 
 impl FeeAlgorithm for LinearFee {
+    fn estimate_overhead(&self, num_bytes: usize) -> Result<Option<Fee>> {
+        let msz = Milli::integral(num_bytes as u64);
+        let fee = self.coefficient * msz;
+        let coin = Coin::new(fee.to_integral())?;
+        Ok(Some(Fee(coin)))
+    }
+
     fn calculate_for_txaux(&self, txaux: &TxAux) -> Result<Fee> {
         // the only reason the cbor serialisation would fail is if there was
         // no more memory free to allocate.
@@ -153,155 +155,16 @@ impl FeeAlgorithm for LinearFee {
         self.estimate(txbytes.len())
     }
     fn calculate_for_txaux_component(&self, tx: &Tx, witnesses: &Vec<TxInWitness>) -> Result<Fee> {
-        let ser = cbor_event::se::Serializer::new_vec();
-        let txbytes = txaux_serialize(tx, witnesses, ser)?.finalize();
-        self.estimate(txbytes.len())
+        let size_bytes = txaux_serialize_size(tx, witnesses);
+        self.estimate(size_bytes)
     }
 }
 
 impl Default for LinearFee {
-    fn default() -> Self { LinearFee::new(Milli::integral(155381), Milli::new(43,946)) }
-}
-
-const TX_IN_WITNESS_CBOR_SIZE: usize = 140;
-const CBOR_TXAUX_OVERHEAD: usize = 51;
-impl SelectionAlgorithm for LinearFee {
-    fn compute<'a, 'b, I, O, Addressing>( &self
-                                        , policy: SelectionPolicy
-                                        , inputs: I
-                                        , outputs: O
-                                        , output_policy: &OutputPolicy
-                                        )
-            -> Result<(Fee, Vec<&'a Input<Addressing>>, Coin)>
-        where I : 'a + Iterator<Item = &'a Input<Addressing>> + ExactSizeIterator
-            , O : 'b + Iterator<Item = &'b TxOut> + Clone
-            , Addressing: 'a
-    {
-        if inputs.len() == 0 { return Err(Error::NoInputs); }
-
-        let output_value = output_sum(outputs.clone())?;
-        let mut fee = self.estimate(0)?;
-        let mut input_value = Coin::zero();
-        let mut selected_inputs = Vec::new();
-
-        // create the Tx on the fly
-        let mut txins = Vec::new();
-        let     txouts : Vec<TxOut> = outputs.cloned().collect();
-
-        // for now we only support this selection algorithm
-        // we need to remove this assert when we extend to more
-        // granulated selection policy
-        assert!(policy == SelectionPolicy::FirstMatchFirst);
-
-        for input in inputs {
-            input_value = (input_value + input.value())?;
-            selected_inputs.push(input);
-            txins.push(input.ptr.clone());
-
-            // calculate fee from the Tx serialised + estimated size for signing
-            let mut tx = Tx::new_with(txins.clone(), txouts.clone());
-            let txbytes = cbor!(&tx)?;
-
-            let estimated_fee = (self.estimate(txbytes.len() + CBOR_TXAUX_OVERHEAD + (TX_IN_WITNESS_CBOR_SIZE * selected_inputs.len())))?;
-
-            // add the change in the estimated fee
-            if let Ok(change_value) = input_value - output_value - estimated_fee.to_coin() {
-                if change_value > Coin::zero() {
-                    match output_policy {
-                        OutputPolicy::One(change_addr) => tx.add_output(TxOut::new(change_addr.clone(), change_value)),
-                    }
-                }
-            };
-
-            let txbytes = cbor!(&tx)?;
-            let corrected_fee = self.estimate(txbytes.len() + CBOR_TXAUX_OVERHEAD + (TX_IN_WITNESS_CBOR_SIZE * selected_inputs.len()));
-
-            fee = corrected_fee?;
-
-            if Ok(input_value) >= (output_value + fee.to_coin()) { break; }
-        }
-
-        if Ok(input_value) < (output_value + fee.to_coin()) {
-            return Err(Error::NotEnoughInput);
-        }
-
-        Ok((fee, selected_inputs, (input_value - output_value - fee.to_coin())?))
-    }
-
-     fn compute_tx_size<'a, 'b, I, O, Addressing>( &self
-                                        , policy: SelectionPolicy
-                                        , inputs: I
-                                        , outputs: O
-                                        , output_policy: &OutputPolicy
-                                        )
-            -> Result<(Coin)>
-        where I : 'a + Iterator<Item = &'a Input<Addressing>> + ExactSizeIterator
-            , O : 'b + Iterator<Item = &'b TxOut> + Clone
-            , Addressing: 'a
-    {
-        if inputs.len() == 0 { return Err(Error::NoInputs); }
-
-        let output_value = output_sum(outputs.clone())?;
-        let mut fee = self.estimate(0)?;
-        let mut input_value = Coin::zero();
-        let mut selected_inputs = Vec::new();
-
-        // create the Tx on the fly
-        let mut txins = Vec::new();
-        let     txouts : Vec<TxOut> = outputs.cloned().collect();
-
-        // for now we only support this selection algorithm
-        // we need to remove this assert when we extend to more
-        // granulated selection policy
-        assert!(policy == SelectionPolicy::FirstMatchFirst);
-        let mut tx_size : usize = 0;    
-
-        for input in inputs {
-            input_value = (input_value + input.value())?;
-            selected_inputs.push(input);
-            txins.push(input.ptr.clone());
-            // calculate fee from the Tx serialised + estimated size for signing
-            let mut tx = Tx::new_with(txins.clone(), txouts.clone());
-            let txbytes = cbor!(&tx)?;
-
-            let estimated_fee = (self.estimate(txbytes.len() + CBOR_TXAUX_OVERHEAD + (TX_IN_WITNESS_CBOR_SIZE * selected_inputs.len())))?;
-
-            // add the change in the estimated fee
-            if let Ok(change_value) = input_value - output_value - estimated_fee.to_coin() {
-                if change_value > Coin::zero() {
-                    match output_policy {
-                        OutputPolicy::One(change_addr) => tx.add_output(TxOut::new(change_addr.clone(), change_value)),
-                    }
-                }
-            };
-
-            let txbytes = cbor!(&tx)?;
-            let corrected_fee = self.estimate(txbytes.len() + CBOR_TXAUX_OVERHEAD + (TX_IN_WITNESS_CBOR_SIZE * selected_inputs.len()));
-            tx_size = txbytes.len() + CBOR_TXAUX_OVERHEAD + (TX_IN_WITNESS_CBOR_SIZE * selected_inputs.len());
-            fee = corrected_fee?;
-
-            if Ok(input_value) >= (output_value + fee.to_coin()) { break; }
-        }
-        if Ok(input_value) < (output_value + fee.to_coin()) {
-            return Err(Error::NotEnoughInput);
-        }
-        let size = Milli::integral(tx_size as u64);
-        let sizeoutput = Coin::new(size.to_integral())?;
-        Ok(sizeoutput)
+    fn default() -> Self {
+        LinearFee::new(Milli::integral(155381), Milli::new(43, 946))
     }
 }
-
-/// the input selection method.
-///
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy)]
-pub enum SelectionPolicy {
-    /// select the first inputs that matches, no optimisation
-    FirstMatchFirst
-}
-impl Default for SelectionPolicy {
-    fn default() -> Self { SelectionPolicy::FirstMatchFirst }
-}
-
 
 #[cfg(test)]
 mod test {
@@ -326,16 +189,16 @@ mod test {
     #[test]
     fn check_fee_add() {
         test_milli_add_eq(10124128_192, 802_504);
-        test_milli_add_eq( 1124128_915, 124802_192);
-        test_milli_add_eq(         241, 900001_901);
-        test_milli_add_eq(         241,        407);
+        test_milli_add_eq(1124128_915, 124802_192);
+        test_milli_add_eq(241, 900001_901);
+        test_milli_add_eq(241, 407);
     }
 
     #[test]
     fn check_fee_mul() {
         test_milli_mul_eq(10124128_192, 802_192);
-        test_milli_mul_eq( 1124128_192, 124802_192);
-        test_milli_mul_eq(         241, 900001_900);
-        test_milli_mul_eq(         241,        400);
+        test_milli_mul_eq(1124128_192, 124802_192);
+        test_milli_mul_eq(241, 900001_900);
+        test_milli_mul_eq(241, 400);
     }
 }

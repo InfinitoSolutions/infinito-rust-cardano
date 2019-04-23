@@ -1,13 +1,22 @@
 [workspace]
 members = [
-    "cryptoxide",
+    "ed25519-bip32",
+    "imhamt",
+    "chain-core",
+    "chain-addr",
+    "chain-time",
+    "chain-crypto",
+    "chain-storage",
+    "chain-storage-sqlite",
+    "chain-impl-mockchain",
     "cardano",
+    "network-core",
+    "network-grpc",
+    "network-ntt",
     "protocol",
+    "protocol-tokio",
+    "storage-units",
     "storage",
-    "hermes",
-    "cbor_event",
     "cardano-c",
-    "cardano-cli",
+    "exe-common",
 ]
-[dependencies]
-printer = { path = "rust-crypto-wasm" }
