@@ -1,2 +1,9 @@
-cardano-c/dist/*
-target/*
+target/
+Cargo.lock
+node_modules/
+dist
+rls
+.idea
+*.swp
+npm-debug.log
+.vscode
