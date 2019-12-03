@@ -114,7 +114,8 @@ fn delete_wallet(wallet_ptr: WalletPtr)
 #[derive(Debug)]
 struct Address {
     wallet  : WalletPtr,
-    address : *mut c_char
+    address : *mut c_char,
+    private : *mut c_char,
 }
 
 fn cardano_generate_address ( root_key       : *const c_char
@@ -127,7 +128,7 @@ fn cardano_generate_address ( root_key       : *const c_char
     let wallet_ptr = create_wallet(root_key);
     let wallet     = unsafe {wallet_ptr.as_mut()}.expect("Not a NULL PTR");
 
-    let account     = wallet.create_account("", account_index).public();
+    let account     = wallet.create_account("", account_index);
 
     let addr_type = if internal == 1 {
         bip44::AddrType::Internal
@@ -136,18 +137,21 @@ fn cardano_generate_address ( root_key       : *const c_char
     };
 
     let mut c_address = ffi::CString::new("");
-    account.address_generator(addr_type, from_index)
-        .expect("we expect the derivation to happen successfully")
-        .take(num_indices)
-        .enumerate()
-        .map(|(_idx, xpub)| {
-            let address = address::ExtendedAddr::new_simple(*xpub.unwrap(), ProtocolMagic::default().into());
-            c_address = Ok(ffi_address_to_base58(&address));
-        }).count();
+    let mut c_address_priv = ffi::CString::new("");
+    for (idx, xprv) in account.address_generator(addr_type, from_index)
+                              .take(1)
+                              .enumerate()
+    {
+      let address = ExtendedAddr::new_simple(*xprv.public(), ProtocolMagic::default().into());
+      c_address = Ok(ffi_address_to_base58(&address));
+      c_address_priv = ffi::CString::new(xprv.to_string());
+      // println!("address index {}: {}: {}: {}", idx, address, *xprv, *xprv.public());
+    }
 
     Address {
         wallet  : wallet_ptr,
-        address : c_address.unwrap().into_raw()
+        address : c_address.unwrap().into_raw(),
+        private : c_address_priv.unwrap().into_raw(),
     }
 }
 
@@ -163,6 +167,20 @@ fn generate_address ( root_key       : *const c_char
     let result = cardano_generate_address(root_key, account_index, internal, from_index, num_indices);
     delete_wallet(result.wallet);
     result.address
+}
+
+#[no_mangle]
+pub extern "C"
+fn generate_address_private ( root_key       : *const c_char
+                    , account_index  : u32
+                    , internal       : u32
+                    , from_index     : u32
+                    , num_indices    : usize)
+-> *mut c_char
+{
+    let result = cardano_generate_address(root_key, account_index, internal, from_index, num_indices);
+    delete_wallet(result.wallet);
+    result.private
 }
 
 #[no_mangle]
@@ -417,6 +435,21 @@ pub mod android {
       );
       let address_ptr = ffi::CString::from_raw(address);
       let output = env.new_string(address_ptr.to_str().unwrap()).expect("Couldn't create java string!");
+      output.into_inner()
+  }
+
+  #[no_mangle]
+    pub unsafe extern fn Java_com_reactlibrary_RNIblCardanoModule_createAddressPrivFromRootKey(
+    env: JNIEnv, _: JClass, rootkey: JString, account_index: jint, internal: jint, from_index: jint, num_indices: jint
+  ) -> jstring {
+      let private = generate_address_private(env.get_string(rootkey).expect("invalid pattern string").as_ptr(),
+      account_index as u32,
+      internal as u32,
+      from_index as u32,
+      num_indices as usize,
+      );
+      let private_ptr = ffi::CString::from_raw(private);
+      let output = env.new_string(private_ptr.to_str().unwrap()).expect("Couldn't create java string!");
       output.into_inner()
   }
 

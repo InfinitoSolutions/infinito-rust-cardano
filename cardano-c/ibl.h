@@ -18,6 +18,9 @@ void delete_account(cardano_account *account);
 char *generate_address( const char *key, unsigned int index, int internal,
                         unsigned int from_index, unsigned long num_indices );
 
+char *generate_address_private( const char *key, unsigned int index, int internal,
+                        unsigned int from_index, unsigned long num_indices );
+
 char* validate_address(const char *address);
 char* validate_private_key(const char* root_key);
 char* new_transaction( const char *root_key, const char *utxos, const char *from_addr, const char *to_addrs );
